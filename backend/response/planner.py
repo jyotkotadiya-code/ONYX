@@ -17,7 +17,7 @@ def detect_query_intent(question: str) -> AllowedIntentType:
         return "visualize"
     if any(w in q for w in ["how much did", "increase", "growth", "percentage", "calculate", "total", "sum", "average"]):
         return "calculate"
-    if any(w in q for w in ["show employee", "show all", "list", "table", "names and departments", "courses", "records"]):
+    if any(w in q for w in ["show employee", "show all", "list", "table", "names and departments", "courses", "records", "salary", "salaries", "compensation", "payroll", "pay", "stipend", "wages", "bonus", "earnings", "income"]):
         return "list"
     if any(w in q for w in ["summarize", "summary"]):
         return "summarize"
@@ -33,12 +33,6 @@ def apply_workspace_followup_command(
     """
     Apply interactive workspace follow-up mutations directly to an existing StructuredResponse
     and increment its version (`v1 -> v2 -> v3`) while preserving undo history.
-    Supports commands like:
-    - "Make this a table."
-    - "Show this as a bar chart." / "Change component_01 to a bar chart."
-    - "Only show the top 5."
-    - "Add percentage change."
-    - "Remove the chart."
     """
     state = copy.deepcopy(previous_response)
     prev_snapshot = copy.deepcopy(previous_response)
@@ -52,7 +46,7 @@ def apply_workspace_followup_command(
     cmd = command_text.lower().strip()
     components: list[dict[str, Any]] = list(state.get("components") or [])
 
-    # 1. Target specific component ID or general chart type switch (e.g. "Change component_01 to a bar chart" / "Show this as a bar chart")
+    # Target specific component ID or general chart type switch
     target_id_match = re.search(r"\b(component_\d+|chart_\d+|table_\d+)\b", cmd)
     target_id = target_id_match.group(1) if target_id_match else None
 
@@ -69,7 +63,6 @@ def apply_workspace_followup_command(
                 comp["type"] = "chart"
                 comp.setdefault("data", {})["chart_type"] = desired_chart_type
                 modified = True
-        # If no chart existed yet, convert the first table into a chart
         if not modified:
             for comp in components:
                 if comp.get("type") == "table":
@@ -79,7 +72,6 @@ def apply_workspace_followup_command(
                     if len(cols) >= 2 and rows:
                         x_key = cols[0]["key"] if isinstance(cols[0], dict) else str(cols[0])
                         y_key = cols[-1]["key"] if isinstance(cols[-1], dict) else str(cols[-1])
-                        # Find first numeric column for y_key
                         for col in cols[1:]:
                             ck = col["key"] if isinstance(col, dict) else str(col)
                             if calculator.to_number(rows[0].get(ck)) is not None:
@@ -102,7 +94,6 @@ def apply_workspace_followup_command(
                         )
                         break
 
-    # 2. "Make this a table"
     if "make this a table" in cmd or "as a table" in cmd or "to a table" in cmd:
         has_table = any(c.get("type") == "table" for c in components)
         if not has_table:
@@ -126,7 +117,6 @@ def apply_workspace_followup_command(
                         )
                         break
 
-    # 3. "Only show the top N"
     top_n_match = re.search(r"top\s+(\d+)", cmd)
     if top_n_match:
         limit_n = int(top_n_match.group(1))
@@ -134,7 +124,6 @@ def apply_workspace_followup_command(
             if comp.get("type") == "table":
                 rows = comp.get("data", {}).get("rows", [])
                 if rows and isinstance(rows[0], dict):
-                    # Sort by last numeric column and keep top N
                     num_keys = [k for k, v in rows[0].items() if calculator.to_number(v) is not None]
                     if num_keys:
                         comp["data"]["rows"] = calculator.sort_rows(rows, num_keys[-1], descending=True, limit=limit_n)
@@ -146,7 +135,6 @@ def apply_workspace_followup_command(
                 if rows and y_key:
                     comp["data"]["data"] = calculator.sort_rows(rows, y_key, descending=True, limit=limit_n)
 
-    # 4. "Remove the chart / table / stat"
     rem_match = re.search(r"remove\s+the\s+(chart|table|stat|kpi|timeline|comparison)", cmd)
     if rem_match:
         rem_type = rem_match.group(1).lower()
@@ -154,7 +142,6 @@ def apply_workspace_followup_command(
             rem_type = "stat"
         components = [c for c in components if c.get("type") != rem_type]
 
-    # 5. "Add percentage change"
     if "percentage change" in cmd:
         for comp in components:
             if comp.get("type") == "chart":
@@ -200,12 +187,6 @@ def build_grounded_structured_response(
     route: str = "documents",
     db_query_result: Optional[dict[str, Any]] = None,
 ) -> StructuredResponse:
-    """
-    Two-Stage Response Planner:
-    Stage 1: Inspect retrieved evidence + deterministic structured extraction & calculations.
-    Stage 2: Select optimal UI representation (Text, Table, Chart, Stat, Timeline, or Composite)
-             following the strict anti-over-visualization rules (#35 & #36), and validate via Pydantic.
-    """
     if not answer_found:
         return validate_and_repair_structured_response(
             raw_payload={
@@ -243,15 +224,16 @@ def build_grounded_structured_response(
     calculations_run: list[str] = []
     vis_choice: str = "none"
 
-    # Rule #35: Do NOT over-visualize simple factual questions (e.g., "What is our refund policy?", "Who is the CTO?", "When is Project Titan scheduled?")
     is_simple_factual = (
         intent in {"answer", "explain", "lookup"}
+        and not (tables or time_series or cat_series or kpis)
         and not any(
             kw in q_lower
             for kw in [
                 "table", "chart", "plot", "graph", "trend", "by month", "monthly",
                 "compare", "across", "all employees", "show employee", "analyze",
-                "performance", "increase", "growth", "highest",
+                "performance", "increase", "growth", "highest", "salary", "salaries",
+                "compensation", "payroll", "pay", "stipend", "wages", "bonus", "earnings",
             ]
         )
     )

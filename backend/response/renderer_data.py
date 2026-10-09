@@ -204,6 +204,98 @@ def extract_structured_data_from_chunks(
                     }
                 )
 
+        # Pattern G: Employee Salary / Compensation Records Extraction
+        salary_rows: list[dict[str, Any]] = []
+        for line in content.splitlines():
+            line_str = line.strip()
+            if not line_str or line_str.startswith("---") or line_str.startswith("#"):
+                continue
+
+            # Case G1: Pipe or comma-separated employee salary lines (e.g. "John Doe | Senior Developer | $120,000")
+            parts = [p.strip() for p in line_str.split("|") if p.strip()]
+            if len(parts) < 2:
+                parts = [p.strip() for p in line_str.split(",") if p.strip()]
+
+            if len(parts) >= 2:
+                for p_idx, p in enumerate(parts):
+                    val_num = calculator.to_number(p)
+                    if val_num is not None and ("$" in p or "₹" in p or "salary" in line_str.lower() or val_num >= 1000):
+                        emp_name = parts[0]
+                        if emp_name.lower() in {"name", "employee", "employee name", "staff", "id"}:
+                            continue
+                        role_dept = parts[1] if (len(parts) > 2 and p_idx != 1) else "General Department"
+                        formatted_sal = p if ("$" in p or "₹" in p) else f"${val_num:,.2f}"
+                        row_item = {
+                            "employee_name": emp_name,
+                            "department_role": role_dept,
+                            "salary": val_num,
+                            "formatted_salary": formatted_sal,
+                        }
+                        if not any(r["employee_name"] == emp_name for r in salary_rows):
+                            salary_rows.append(row_item)
+                            categorical_series.append({
+                                "category": emp_name,
+                                "value": val_num,
+                                "metric": "Salary Amount",
+                            })
+                        break
+
+            # Case G2: Key-value salary match (e.g., "Alice Smith - Salary: $95,000")
+            if not parts or len(parts) < 2:
+                sal_m = re.search(
+                    r"([A-Z][a-zA-Z\s]{2,30}?)\s*(?:[-–:]\s*(?:Role|Dept|Position)?\s*([A-Za-z\s]{2,25}))?\s*[-–:]\s*(?:Salary|Compensation|Pay|Stipend)?\s*[:\-–=]?\s*(?:₹|\$|USD|INR)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
+                    line_str,
+                    re.IGNORECASE,
+                )
+                if sal_m:
+                    emp_n = sal_m.group(1).strip()
+                    dept_r = sal_m.group(2).strip() if sal_m.group(2) else "Employee"
+                    sal_v = calculator.to_number(sal_m.group(3))
+                    if sal_v is not None and sal_v >= 500 and emp_n.lower() not in {"salary", "total", "average"}:
+                        formatted_sal = f"${sal_v:,.2f}"
+                        if not any(r["employee_name"] == emp_n for r in salary_rows):
+                            salary_rows.append({
+                                "employee_name": emp_n,
+                                "department_role": dept_r,
+                                "salary": sal_v,
+                                "formatted_salary": formatted_sal,
+                            })
+                            categorical_series.append({
+                                "category": emp_n,
+                                "value": sal_v,
+                                "metric": "Salary Amount",
+                            })
+
+        if salary_rows:
+            tables.append({
+                "title": "Employee Salary & Compensation Records",
+                "columns": [
+                    {"key": "employee_name", "label": "Employee Name"},
+                    {"key": "department_role", "label": "Department / Position"},
+                    {"key": "formatted_salary", "label": "Salary / Compensation"},
+                ],
+                "rows": salary_rows,
+            })
+            sal_list = [r["salary"] for r in salary_rows]
+            avg_sal = round(calculator.compute_average(sal_list), 2)
+            max_sal = max(sal_list)
+            kpis.append({
+                "label": "Average Employee Salary",
+                "value": avg_sal,
+                "format": "currency",
+                "currency": "USD",
+                "change_label": f"Across {len(salary_rows)} employee records",
+                "trend": "up",
+            })
+            kpis.append({
+                "label": "Highest Compensation",
+                "value": max_sal,
+                "format": "currency",
+                "currency": "USD",
+                "change_label": "Peak reported compensation",
+                "trend": "up",
+            })
+
     if course_rows:
         tables.append(
             {

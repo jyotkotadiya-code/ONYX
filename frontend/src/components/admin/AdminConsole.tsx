@@ -360,6 +360,27 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
     }
   };
 
+  const handleDeleteUser = async (userId: string, username: string) => {
+    if (!window.confirm(`Are you sure you want to permanently remove member @${username}? This action cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/users/${userId}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || 'Failed to remove member.');
+      }
+      notify('ok', `Member @${username} was removed successfully.`);
+      fetchAdminData();
+      if (selectedEmpProfile?.employee?.id === userId) {
+        setSelectedEmpProfile(null);
+      }
+    } catch (err: any) {
+      notify('err', err.message);
+    }
+  };
+
   // Archive / Unarchive Document
   const handleArchiveDocument = async (docId: string, isArchived: boolean) => {
     try {
@@ -1201,20 +1222,29 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
                         Inspect Profile
                       </button>
                       {u.username !== currentUser?.username && (
-                        <button
-                          onClick={() =>
-                            handleUpdateUser(u.id, {
-                              status: u.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE',
-                            })
-                          }
-                          className={`px-2.5 py-1 rounded-lg border text-[11px] ${
-                            u.status === 'ACTIVE'
-                              ? 'border-rose-500/30 text-rose-400 hover:bg-rose-500/10'
-                              : 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
-                          }`}
-                        >
-                          {u.status === 'ACTIVE' ? 'Disable' : 'Enable'}
-                        </button>
+                        <>
+                          <button
+                            onClick={() =>
+                              handleUpdateUser(u.id, {
+                                status: u.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE',
+                              })
+                            }
+                            className={`px-2.5 py-1 rounded-lg border text-[11px] ${
+                              u.status === 'ACTIVE'
+                                ? 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
+                                : 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                            }`}
+                          >
+                            {u.status === 'ACTIVE' ? 'Disable' : 'Enable'}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(u.id, u.username)}
+                            className="px-2.5 py-1 rounded-lg border border-rose-500/40 text-rose-500 hover:bg-rose-500/10 text-[11px] font-medium transition"
+                            title="Remove member permanently from workplace"
+                          >
+                            Remove
+                          </button>
+                        </>
                       )}
                     </td>
                   </tr>
@@ -1964,10 +1994,52 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
               </div>
             </div>
 
-            {/* Security Controls */}
+            {/* Granular Data Access & Collection Scope Management */}
+            <div className="space-y-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                Grant / Restrict Collection Access
+              </h4>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Click a collection to grant or restrict this member's access in real-time.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {collections.map((col) => {
+                  const allowedList = selectedEmpProfile.employee.allowed_collections || ['General'];
+                  const isAllowed = allowedList.includes('*') || allowedList.includes(col.name);
+                  return (
+                    <button
+                      type="button"
+                      key={col.id}
+                      onClick={() => {
+                        let updatedCols: string[];
+                        if (allowedList.includes('*')) {
+                          updatedCols = collections.map(c => c.name).filter(n => n !== col.name);
+                        } else if (isAllowed) {
+                          updatedCols = allowedList.filter((n: string) => n !== col.name);
+                        } else {
+                          updatedCols = [...allowedList, col.name];
+                        }
+                        handleUpdateUser(selectedEmpProfile.employee.id, {
+                          allowed_collections: updatedCols,
+                        });
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition ${
+                        isAllowed
+                          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+                          : 'bg-rose-500/10 border-rose-500/30 text-rose-400 opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      {isAllowed ? '✓ ' : '✗ '} {col.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Security & Access Management Controls */}
             <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
               <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Security Controls
+                Security & Account Actions
               </h4>
               <div className="flex gap-2">
                 <input
@@ -2011,6 +2083,14 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
                     ? 'Change to Employee'
                     : 'Promote to Admin'}
                 </button>
+                {selectedEmpProfile.employee.username !== currentUser?.username && (
+                  <button
+                    onClick={() => handleDeleteUser(selectedEmpProfile.employee.id, selectedEmpProfile.employee.username)}
+                    className="px-3 py-2 rounded-xl border border-rose-500/40 text-rose-500 hover:bg-rose-500/10 text-xs font-medium transition"
+                  >
+                    Remove Member
+                  </button>
+                )}
               </div>
             </div>
           </div>

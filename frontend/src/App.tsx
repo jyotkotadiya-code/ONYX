@@ -130,13 +130,8 @@ const PROCESSING_STAGES = [
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
-  const [token, setToken] = useState<string | null>(
-    () => localStorage.getItem('rag_token') || sessionStorage.getItem('rag_token')
-  );
-  const [user, setUser] = useState<UserInfo | null>(() => {
-    const saved = localStorage.getItem('rag_user') || sessionStorage.getItem('rag_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<UserInfo | null>(null);
 
   const isAdmin = Boolean(user && String(user.role).toLowerCase() === 'admin');
 

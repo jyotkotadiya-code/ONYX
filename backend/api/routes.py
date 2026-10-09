@@ -1335,6 +1335,41 @@ def disable_user_endpoint(
     return _serialize_user(db, target)
 
 
+@router.delete("/users/{user_id}")
+@router.delete("/admin/employees/{user_id}")
+def delete_user(
+    user_id: str,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    target = (
+        db.query(User)
+        .filter(User.id == user_id, User.workspace_id == admin.workspace_id)
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.username == "admin" or target.id == admin.id:
+        raise HTTPException(status_code=400, detail="Cannot delete the primary system administrator account.")
+
+    invalidate_user_sessions(db, target)
+    db.query(UserGroup).filter(UserGroup.user_id == target.id).delete()
+    db.delete(target)
+    db.commit()
+
+    record_audit_log(
+        db=db,
+        action="USER_DELETED",
+        resource_type="user",
+        user=admin,
+        resource_id=user_id,
+        severity="ALERT",
+        details={"deleted_username": target.username, "deleted_name": target.name},
+    )
+    return {"status": "deleted", "user_id": user_id}
+
+
+
 @router.post("/users/{user_id}/revoke-sessions")
 def revoke_user_sessions_endpoint(
     user_id: str,
