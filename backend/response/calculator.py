@@ -1,3 +1,4 @@
+import re
 from typing import Any, Optional
 
 
@@ -23,6 +24,8 @@ class DeterministicCalculator:
                 .replace(")", "")
                 .strip()
             )
+            # Clean OCR prefix noise like 'I42000' -> '42000' or 'n42000' -> '42000'
+            cleaned = re.sub(r"^[A-Za-z\s]+(?=\d)", "", cleaned).strip()
             # Handle strings like "4.85 Million"
             multiplier = 1.0
             lower = cleaned.lower()

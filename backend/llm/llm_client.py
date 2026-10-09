@@ -158,12 +158,32 @@ class LocalLLMClient:
 
     def _format_structured_row_if_applicable(self, line: str) -> str:
         """
-        If a line is a pipe-delimited academic/financial table row (e.g. Statement of Marks),
+        If a line is a pipe-delimited academic/financial table row (e.g. Statement of Marks or Monthly Revenue),
         format its columns into a clear human-readable breakdown alongside the raw row.
         """
         parts = [p.strip() for p in line.split("|") if p.strip()]
+
+        # Monthly revenue table row format: "Jan 2024 | I42,000 | Jan 2025 | I66,500" or "Jan 2024 | 184,296 | 113,757 | 70,539"
+        month_names = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+        if any(p.lower().split()[0] in month_names for p in parts if p.strip()):
+            formatted_parts = []
+            for idx in range(0, len(parts)):
+                pt = parts[idx]
+                if any(m in pt.lower() for m in month_names):
+                    val_str = parts[idx + 1] if idx + 1 < len(parts) else ""
+                    num_val = settings.to_number(val_str) if hasattr(settings, "to_number") else None
+                    if num_val is None:
+                        clean_num = re.sub(r"^[A-Za-z\s]+(?=\d)", "", val_str.replace(",", "").replace("₹", "").replace("$", ""))
+                        try:
+                            num_val = float(clean_num)
+                        except ValueError:
+                            num_val = None
+                    if num_val is not None and num_val > 10:
+                        formatted_parts.append(f"**{pt}**: ₹{num_val:,.0f}" if "i" in val_str.lower() or "n" in val_str.lower() or "₹" in line.lower() or "inr" in line.lower() else f"**{pt}**: ${num_val:,.0f}")
+            if formatted_parts:
+                return " | ".join(formatted_parts)
+
         # Detect typical 14-16 column university statement-of-marks row:
-        # PART | CODE | TITLE | CREDITS | CIA_MIN | CIA_MAX | CIA_OBT | SEE_MIN | SEE_MAX | SEE_OBT | TOT_MIN | TOT_MAX | TOT_OBT | GP | GRADE | RESULT
         if len(parts) >= 13 and re.match(r"^[0-9]{2}[A-Z]{2,}[0-9]{2,}", parts[1]):
             code = parts[1]
             title = parts[2]
@@ -198,6 +218,7 @@ class LocalLLMClient:
             "pdf", "file", "table", "row", "value", "number", "amount", "score",
             "details", "information", "report", "statement", "what", "which",
             "when", "where", "who", "how", "many", "much", "our", "the", "and",
+            "figures", "figures by month", "monthly breakdown", "overview",
         }
         all_q_words = [
             w
@@ -209,7 +230,7 @@ class LocalLLMClient:
         synthesized_points: list[str] = []
         seen_lines: set[str] = set()
 
-        for ch in retrieved_chunks[:4]:
+        for ch in retrieved_chunks[:5]:
             content = ch.get("content", "")
             cit = ch.get("citation", {})
             source_tag = f"[{cit.get('filename', 'source')} — {cit.get('locator', 'p.1')}]"
@@ -229,21 +250,24 @@ class LocalLLMClient:
                 ln_tokens = set(
                     re.findall(r"[a-zA-Z0-9_\-\u0900-\u097F\u0A80-\u0AFF]+", ln.lower())
                 )
-                # Specific entity words (e.g., "java", "php", "mercury", "titan", "q1") get 5x weight
                 spec_hits = sum(5.0 for w in specific_q_words if w in ln_tokens or w in ln.lower())
                 gen_hits = sum(1.0 for w in all_q_words if w in ln_tokens)
-                # Bonus for lines containing numeric values/data when user asks for marks/revenue/date/numbers
-                has_digits = 0.5 if re.search(r"\d", ln) else 0.0
-                score = spec_hits + gen_hits + has_digits
-                if specific_q_words and spec_hits == 0:
-                    # Demote lines that only match generic words like "Total Marks" when a specific subject/entity was asked
+                has_digits = 3.0 if re.search(r"\d", ln) else 0.0
+                has_month = 4.0 if any(m in ln.lower() for m in ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]) else 0.0
+                score = spec_hits + gen_hits + has_digits + has_month
+
+                # Demote pure table headers without data numbers (e.g. "Month | Revenue (I)")
+                if not re.search(r"\d", ln) and ("month" in ln.lower() or "revenue" in ln.lower() or "breakdown" in ln.lower()):
+                    score *= 0.1
+
+                if specific_q_words and spec_hits == 0 and not has_month:
                     score *= 0.15
                 scored_lines.append((score, ln))
 
             scored_lines.sort(key=lambda x: x[0], reverse=True)
             selected_for_chunk = [
                 self._format_structured_row_if_applicable(ln)
-                for sc, ln in scored_lines[:2]
+                for sc, ln in scored_lines[:4]
                 if sc >= 1.5
             ]
             if not selected_for_chunk and scored_lines and not specific_q_words:
@@ -257,7 +281,7 @@ class LocalLLMClient:
         if not synthesized_points:
             return NOT_FOUND_RESPONSE
 
-        return "Based on the uploaded knowledge base:\n\n" + "\n".join(synthesized_points[:4])
+        return "Based on the uploaded knowledge base:\n\n" + "\n".join(synthesized_points[:12])
 
     async def generate_answer(
         self,

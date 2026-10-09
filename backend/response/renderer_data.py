@@ -114,16 +114,19 @@ def extract_structured_data_from_chunks(
                             }
                         )
 
-        # Pattern C: Monthly / Time-series patterns (e.g., "January: 120000" or "Jan - $45,000")
+        # Pattern C: Monthly / Time-series patterns (e.g., "January 2024: 42,000", "Jan 2024 | I42,000", "Jan - $45,000")
         month_regex = re.compile(
-            r"\b(" + "|".join(MONTH_NAMES) + r")\b\s*[:\-–=]\s*(?:₹|\$|USD|INR)?\s*([0-9][0-9,]*(?:\.[0-9]+)?(?:\s*(?:Million|M|Cr|Lakh|K))?)",
+            r"\b(" + "|".join(MONTH_NAMES) + r")(?:\s*['’\-]?\s*(\d{2,4}))?\b\s*[:\-–=|\t,]*\s*(?:[A-Za-z₹\$]{1,4})?\s*([0-9][0-9,]*(?:\.[0-9]+)?(?:\s*(?:Million|M|Cr|Lakh|K))?)",
             re.IGNORECASE,
         )
         for m_match in month_regex.finditer(content):
             m_name = m_match.group(1).title()
-            val_num = calculator.to_number(m_match.group(2))
-            if val_num is not None and not any(x["period"] == m_name for x in time_series):
-                time_series.append({"period": m_name, "month": m_name, "value": val_num})
+            yr = m_match.group(2)
+            val_num = calculator.to_number(m_match.group(3))
+            if val_num is not None and val_num not in (2023, 2024, 2025, 2026, 2027) and val_num > 10:
+                period = f"{m_name} {yr}" if yr else m_name
+                if not any(x["period"] == period for x in time_series):
+                    time_series.append({"period": period, "month": m_name, "year": yr, "value": val_num})
 
         # Pattern D: Department / Category key-value pairs (e.g. "Engineering Department: $1,200,000")
         dept_regex = re.compile(

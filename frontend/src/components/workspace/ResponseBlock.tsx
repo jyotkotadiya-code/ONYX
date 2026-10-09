@@ -47,7 +47,7 @@ export const ResponseBlock: React.FC<ResponseBlockProps> = ({
           )}
         </div>
 
-        {onOpenWorkspace && (hasRichVisuals || components.length > 1) && (
+        {onOpenWorkspace && components.length > 0 && (
           <button
             type="button"
             onClick={() => onOpenWorkspace(structured)}
@@ -60,7 +60,7 @@ export const ResponseBlock: React.FC<ResponseBlockProps> = ({
       </div>
 
       {/* Embedded Artifact View CTA Banner */}
-      {onOpenWorkspace && hasRichVisuals && (
+      {onOpenWorkspace && (hasRichVisuals || components.length >= 1) && (
         <div className="my-2.5 p-3 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/10 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-sm">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
