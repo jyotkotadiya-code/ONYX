@@ -1,0 +1,84 @@
+[
+  {
+    "id": "Q1",
+    "category": "easy",
+    "question": "When is Project Titan scheduled for release and what encryption cipher does it use?",
+    "expected_keywords": [
+      "15 November 2026",
+      "AES-256-GCM"
+    ],
+    "expected_sources": [
+      "engineering_roadmap_2026.pdf"
+    ],
+    "answerable": true
+  },
+  {
+    "id": "Q2",
+    "category": "multi-document",
+    "question": "What was our Q1 2026 revenue and what caused the largest expense increase?",
+    "expected_keywords": [
+      "4.85 Million",
+      "620,000"
+    ],
+    "expected_sources": [
+      "q1_financial_operations.docx"
+    ],
+    "answerable": true
+  },
+  {
+    "id": "Q3",
+    "category": "exact-match",
+    "question": "What is the serial number and hostname of asset SRV-9082?",
+    "expected_keywords": [
+      "SN-RTX-998120-IN",
+      "onyx-gpu-node-01"
+    ],
+    "expected_sources": [
+      "hardware_inventory.xml"
+    ],
+    "answerable": true
+  },
+  {
+    "id": "Q4",
+    "category": "cross-document",
+    "question": "Which data center facility code hosts Project Titan and the new GPU servers?",
+    "expected_keywords": [
+      "BOM-DC04"
+    ],
+    "expected_sources": [
+      "engineering_roadmap_2026.pdf",
+      "q1_financial_operations.docx"
+    ],
+    "answerable": true
+  },
+  {
+    "id": "Q5",
+    "category": "summarization",
+    "question": "Summarize our Enterprise refund policy and Q1 2026 financial performance.",
+    "expected_keywords": [
+      "30-day",
+      "4.85 Million"
+    ],
+    "expected_sources": [
+      "engineering_roadmap_2026.pdf",
+      "q1_financial_operations.docx"
+    ],
+    "answerable": true
+  },
+  {
+    "id": "Q6",
+    "category": "negative",
+    "question": "What is the stock ticker symbol of QuantumHyperDrive Corp on the Tokyo Stock Exchange?",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "answerable": false
+  },
+  {
+    "id": "Q7",
+    "category": "negative",
+    "question": "Who won the intergalactic chess tournament in 3045?",
+    "expected_keywords": [],
+    "expected_sources": [],
+    "answerable": false
+  }
+]

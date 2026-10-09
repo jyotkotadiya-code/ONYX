@@ -1,0 +1,12 @@
+{
+  "document_id": "3428cbc0-7972-45d6-979d-28133c103e20",
+  "filename": "customers.xml",
+  "version": 1,
+  "modality": "xml",
+  "chunk_count": 1,
+  "metadata": {
+    "root_tag": "Catalog",
+    "record_count": 1,
+    "page_count": 1
+  }
+}

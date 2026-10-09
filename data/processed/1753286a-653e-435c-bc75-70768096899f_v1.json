@@ -1,0 +1,15 @@
+{
+  "document_id": "1753286a-653e-435c-bc75-70768096899f",
+  "filename": "company_hr.db",
+  "version": 1,
+  "modality": "database",
+  "chunk_count": 2,
+  "metadata": {
+    "database": "v1_9bdfa33d_company_hr.db",
+    "tables_indexed": [
+      "employees"
+    ],
+    "total_rows_indexed": 2,
+    "page_count": 1
+  }
+}

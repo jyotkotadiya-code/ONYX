@@ -1,0 +1,7 @@
+{
+  "retrieval_accuracy_pct": 100.0,
+  "answer_accuracy_pct": 100.0,
+  "citation_accuracy_pct": 100.0,
+  "unsupported_answer_rate_pct": 0.0,
+  "average_latency_ms": 2962.94
+}

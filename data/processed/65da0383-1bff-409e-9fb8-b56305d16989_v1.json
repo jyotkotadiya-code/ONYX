@@ -1,0 +1,13 @@
+{
+  "document_id": "65da0383-1bff-409e-9fb8-b56305d16989",
+  "filename": "financial_report_q1.docx",
+  "version": 1,
+  "modality": "docx",
+  "chunk_count": 2,
+  "metadata": {
+    "author": "python-docx",
+    "title": "v1_54f54c76_financial_report_q1",
+    "tables_extracted": 0,
+    "page_count": 2
+  }
+}

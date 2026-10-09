@@ -1,0 +1,12 @@
+{
+  "document_id": "e2865f4e-ea98-43f0-ad41-b4baaa69a422",
+  "filename": "hardware_inventory.xml",
+  "version": 2,
+  "modality": "xml",
+  "chunk_count": 1,
+  "metadata": {
+    "root_tag": "Inventory",
+    "record_count": 1,
+    "page_count": 1
+  }
+}

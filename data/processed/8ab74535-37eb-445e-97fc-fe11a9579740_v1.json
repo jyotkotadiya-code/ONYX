@@ -1,0 +1,20 @@
+{
+  "document_id": "8ab74535-37eb-445e-97fc-fe11a9579740",
+  "filename": "invoice_scan.jpg",
+  "version": 1,
+  "modality": "image",
+  "chunk_count": 1,
+  "metadata": {
+    "filename": "v1_58fcf9cf_invoice_scan.jpg",
+    "width": 700,
+    "height": 220,
+    "format": "JPEG",
+    "mode": "RGB",
+    "ocr_text": "INVOICENUMBERINV-2026-8831\nVENDORBharatOptical FiberSystems",
+    "ocr_confidence": 0.9748,
+    "ocr_engine": "RapidOCR-ONNX",
+    "path": "C:\\Users\\devik\\Desktop\\rag\\data\\uploads\\v1_58fcf9cf_invoice_scan.jpg",
+    "hash": "58fcf9cf301126a33184a960b942b76da8cabea93f7fff5a90fb8e08944a8410",
+    "page_count": 1
+  }
+}

@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  rag-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: onyx-local-rag-backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
