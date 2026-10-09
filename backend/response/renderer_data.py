@@ -207,26 +207,34 @@ def extract_structured_data_from_chunks(
                     }
                 )
 
-        # Pattern G: Employee Salary / Compensation Records Extraction
+        # Pattern G: Dedicated Employee Salary & Compensation Records Extraction
         salary_rows: list[dict[str, Any]] = []
+        salary_keywords = {"salary", "stipend", "payroll", "compensation", "employee", "pay", "wage", "bonus", "ctc"}
+        invalid_name_terms = {
+            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+            "january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december",
+            "year", "month", "total", "revenue", "profit", "expenses", "2024", "2025", "2026", "2027", "id", "name", "employee", "staff", "summary", "figures"
+        }
         for line in content.splitlines():
             line_str = line.strip()
             if not line_str or line_str.startswith("---") or line_str.startswith("#"):
                 continue
 
-            # Case G1: Pipe or comma-separated employee salary lines (e.g. "John Doe | Senior Developer | $120,000")
             parts = [p.strip() for p in line_str.split("|") if p.strip()]
             if len(parts) < 2:
                 parts = [p.strip() for p in line_str.split(",") if p.strip()]
 
             if len(parts) >= 2:
-                for p_idx, p in enumerate(parts):
+                emp_name = parts[0]
+                emp_name_lower = emp_name.lower().strip()
+                if any(inv in emp_name_lower for inv in invalid_name_terms) or re.match(r"^\d+", emp_name_lower):
+                    continue
+
+                for p_idx, p in enumerate(parts[1:], start=1):
                     val_num = calculator.to_number(p)
-                    if val_num is not None and ("$" in p or "₹" in p or "salary" in line_str.lower() or val_num >= 1000):
-                        emp_name = parts[0]
-                        if emp_name.lower() in {"name", "employee", "employee name", "staff", "id"}:
-                            continue
-                        role_dept = parts[1] if (len(parts) > 2 and p_idx != 1) else "General Department"
+                    has_sal_kw = any(kw in line_str.lower() for kw in salary_keywords)
+                    if val_num is not None and val_num >= 500 and (has_sal_kw or "$" in p or "₹" in p):
+                        role_dept = parts[1] if (len(parts) > 2 and p_idx != 1) else "Employee"
                         formatted_sal = p if ("$" in p or "₹" in p) else f"${val_num:,.2f}"
                         row_item = {
                             "employee_name": emp_name,
@@ -242,32 +250,6 @@ def extract_structured_data_from_chunks(
                                 "metric": "Salary Amount",
                             })
                         break
-
-            # Case G2: Key-value salary match (e.g., "Alice Smith - Salary: $95,000")
-            if not parts or len(parts) < 2:
-                sal_m = re.search(
-                    r"([A-Z][a-zA-Z\s]{2,30}?)\s*(?:[-–:]\s*(?:Role|Dept|Position)?\s*([A-Za-z\s]{2,25}))?\s*[-–:]\s*(?:Salary|Compensation|Pay|Stipend)?\s*[:\-–=]?\s*(?:₹|\$|USD|INR)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)",
-                    line_str,
-                    re.IGNORECASE,
-                )
-                if sal_m:
-                    emp_n = sal_m.group(1).strip()
-                    dept_r = sal_m.group(2).strip() if sal_m.group(2) else "Employee"
-                    sal_v = calculator.to_number(sal_m.group(3))
-                    if sal_v is not None and sal_v >= 500 and emp_n.lower() not in {"salary", "total", "average"}:
-                        formatted_sal = f"${sal_v:,.2f}"
-                        if not any(r["employee_name"] == emp_n for r in salary_rows):
-                            salary_rows.append({
-                                "employee_name": emp_n,
-                                "department_role": dept_r,
-                                "salary": sal_v,
-                                "formatted_salary": formatted_sal,
-                            })
-                            categorical_series.append({
-                                "category": emp_n,
-                                "value": sal_v,
-                                "metric": "Salary Amount",
-                            })
 
         if salary_rows:
             tables.append({
@@ -286,7 +268,7 @@ def extract_structured_data_from_chunks(
                 "label": "Average Employee Salary",
                 "value": avg_sal,
                 "format": "currency",
-                "currency": "USD",
+                "currency": "USD" if "$" in content else "INR",
                 "change_label": f"Across {len(salary_rows)} employee records",
                 "trend": "up",
             })
@@ -294,10 +276,43 @@ def extract_structured_data_from_chunks(
                 "label": "Highest Compensation",
                 "value": max_sal,
                 "format": "currency",
-                "currency": "USD",
+                "currency": "USD" if "$" in content else "INR",
                 "change_label": "Peak reported compensation",
                 "trend": "up",
             })
+
+        # Pattern H: Universal Markdown Table Parser (Preserves exact document headers & labels)
+        lines = content.splitlines()
+        for i in range(len(lines) - 2):
+            l1 = lines[i].strip()
+            l2 = lines[i+1].strip()
+            if l1.startswith("|") and l1.endswith("|") and ("---" in l2 or "| ---" in l2):
+                header_parts = [h.strip() for h in l1.split("|") if h.strip()]
+                if len(header_parts) >= 2:
+                    # Skip statement of marks header if handled by Pattern B
+                    if any(x in l1.lower() for x in ["cia_min", "see_min", "tot_max"]):
+                        continue
+                    tbl_rows = []
+                    for j in range(i+2, len(lines)):
+                        l_row = lines[j].strip()
+                        if not l_row.startswith("|"):
+                            break
+                        row_parts = [r.strip() for r in l_row.split("|") if r.strip()]
+                        if len(row_parts) == len(header_parts):
+                            r_dict = {}
+                            for h_k, r_v in zip(header_parts, row_parts):
+                                clean_k = re.sub(r"[^\w\s]", "", h_k).strip().replace(" ", "_").lower() or "col"
+                                num_v = calculator.to_number(r_v)
+                                r_dict[clean_k] = num_v if (num_v is not None and re.match(r"^-?\d+(\.\d+)?$", r_v.replace(",", ""))) else r_v
+                            tbl_rows.append(r_dict)
+                    if tbl_rows and not any(t.get("title", "").startswith(f"Table: {' | '.join(header_parts[:2])}") for t in tables):
+                        cols = [{"key": (re.sub(r"[^\w\s]", "", h).strip().replace(" ", "_").lower() or f"col_{idx}"), "label": h} for idx, h in enumerate(header_parts)]
+                        tables.append({
+                            "title": f"Document Table: {' | '.join(header_parts[:3])}",
+                            "columns": cols,
+                            "rows": tbl_rows,
+                            "source": filename,
+                        })
 
     if course_rows:
         tables.append(

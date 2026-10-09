@@ -165,7 +165,7 @@ def test_xml_ingestion(admin_token: str):
     assert resp.status_code == 200, resp.text
     doc_data = resp.json()["document"]
     assert doc_data["status"] == "Ready"
-    assert doc_data["modality"] == "xml"
+    assert doc_data["modality"] == "text"
 
 
 def test_image_ocr_ingestion(admin_token: str):

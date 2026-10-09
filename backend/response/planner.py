@@ -220,6 +220,41 @@ def build_grounded_structured_response(
     kpis = extracted["kpis"]
     timeline_events = extracted["timeline_events"]
 
+    # Grounded Guardrail: If user asks for salary data, do not attach non-salary tables (e.g. revenue tables)
+    is_salary_query = any(kw in q_lower for kw in ["salary", "salaries", "compensation", "payroll", "stipend", "wages", "earnings"])
+    if is_salary_query:
+        has_salary_table = any(
+            any(kw in t.get("title", "").lower() for kw in ["salary", "compensation", "payroll", "stipend"])
+            for t in tables
+        )
+        if not has_salary_table:
+            tables = []
+            kpis = []
+            time_series = []
+            cat_series = []
+            answer_text = "I couldn't find any employee salary or payroll records in the uploaded knowledge base."
+            return validate_and_repair_structured_response(
+                raw_payload={
+                    "schema_version": "1.0",
+                    "version": 1,
+                    "title": question[:70].strip().capitalize(),
+                    "intent": "answer",
+                    "response_type": "text",
+                    "components": [
+                        {
+                            "id": "text_01",
+                            "type": "text",
+                            "title": "Not Found in Knowledge Base",
+                            "data": {"markdown": answer_text},
+                        }
+                    ],
+                    "sources": citations,
+                    "confidence": 1.0,
+                },
+                fallback_text=answer_text,
+                fallback_sources=citations,
+            )
+
     components: list[dict[str, Any]] = []
     calculations_run: list[str] = []
     vis_choice: str = "none"

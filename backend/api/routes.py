@@ -86,7 +86,6 @@ from backend.database.sqlite_db import (
 )
 from backend.database.vector_store import vector_store
 from backend.embeddings.embedding_service import embedding_service
-from backend.ingestion.audio_parser import audio_parser
 from backend.ingestion.database_parser import inspect_database_schema
 from backend.ingestion.ocr import ocr_engine
 from backend.ingestion.pipeline import process_document_ingestion
@@ -435,7 +434,7 @@ async def get_models(current_user: User = Depends(get_current_user)):
         "generation_llm": llm_info,
         "embedding_model": emb_info,
         "ocr_engine": ocr_engine.get_status(),
-        "audio_engine": audio_parser.get_status(),
+        "database_engine": {"status": "online", "engine": "SQLite / Universal SQL"},
     }
 
 
@@ -448,7 +447,6 @@ async def system_status(
     emb_info = embedding_service.get_status()
     vec_info = vector_store.get_status()
     ocr_info = ocr_engine.get_status()
-    aud_info = audio_parser.get_status()
 
     # Scope statistics to the user's authorized documents so restricted document counts are never leaked
     if current_user is None:
@@ -526,8 +524,6 @@ async def system_status(
         "sqlite": "online",
         "ocr": ocr_info["status"],
         "ocr_details": safe_ocr_details,
-        "audio": aud_info["status"],
-        "audio_details": {"status": aud_info.get("status", "optional"), "engine": aud_info.get("engine", "Whisper")},
         "services": {
             "application": {"status": "online", "label": "Application API"},
             "database": {"status": "online", "label": "Local Metadata DB (SQLite)"},

@@ -14,14 +14,12 @@ from backend.database.sqlite_db import (
     SessionLocal,
 )
 from backend.database.vector_store import vector_store
-from backend.ingestion.audio_parser import audio_parser
 from backend.ingestion.chunker import chunk_parsed_blocks
 from backend.ingestion.database_parser import parse_database
 from backend.ingestion.doc_parser import parse_text_or_doc
 from backend.ingestion.embedder import embed_document_chunks
 from backend.ingestion.image_parser import parse_image
 from backend.ingestion.pdf_parser import parse_pdf
-from backend.ingestion.xml_parser import parse_xml
 
 
 def _update_status(
@@ -59,23 +57,17 @@ def _route_parser(
         blocks, meta = parse_pdf(file_path, progress_callback=progress_cb)
         modality = "scanned_pdf" if meta.get("is_scanned") else "pdf"
         return blocks, meta, modality
-    if ext in {".docx", ".doc", ".txt", ".md", ".csv", ".json"}:
+    if ext in {".docx", ".doc", ".txt", ".md", ".csv", ".json", ".xml"}:
         blocks, meta = parse_text_or_doc(file_path)
         modality = "docx" if ext == ".docx" else ("doc" if ext == ".doc" else "text")
         return blocks, meta, modality
-    if ext == ".xml":
-        blocks, meta = parse_xml(file_path)
-        return blocks, meta, "xml"
     if ext in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}:
         blocks, meta = parse_image(file_path, progress_callback=progress_cb)
         return blocks, meta, "image"
     if ext in {".db", ".sqlite", ".sqlite3"}:
         blocks, meta = parse_database(str(file_path), selected_tables=selected_tables)
         return blocks, meta, "database"
-    if ext in {".mp3", ".wav", ".m4a", ".ogg", ".flac"}:
-        blocks, meta = audio_parser.parse_audio(file_path)
-        return blocks, meta, "audio"
-    raise ValueError(f"Unsupported file extension '{ext}'.")
+    raise ValueError(f"Unsupported file extension '{ext}'. Only PDF, OCR Images (PNG/JPG), Databases, and Text documents are supported.")
 
 
 def process_document_ingestion(
