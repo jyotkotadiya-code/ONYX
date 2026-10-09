@@ -821,6 +821,130 @@ def update_current_workplace(
     return _serialize_workplace(db, ws, user=admin)
 
 
+@router.delete("/workplaces/{workplace_id}")
+def delete_workplace(
+    workplace_id: str,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    ws = db.query(Workspace).filter(Workspace.id == workplace_id).first()
+    if not ws:
+        raise HTTPException(status_code=404, detail="Workplace not found.")
+
+    total_workplaces = db.query(Workspace).count()
+    if total_workplaces <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete the sole workplace in the system. Create another workplace first or use system data purge.",
+        )
+
+    # Delete all documents & vector chunks associated with this workplace
+    docs = db.query(Document).filter(Document.workspace_id == workplace_id).all()
+    for d in docs:
+        try:
+            vector_store.delete_document_chunks(d.id)
+        except Exception:
+            pass
+        db.query(ChunkRecord).filter(ChunkRecord.document_id == d.id).delete(synchronize_session=False)
+        db.query(DocumentVersion).filter(DocumentVersion.document_id == d.id).delete(synchronize_session=False)
+        db.query(DocumentAccess).filter(DocumentAccess.document_id == d.id).delete(synchronize_session=False)
+        db.query(Document).filter(Document.id == d.id).delete(synchronize_session=False)
+
+    db.query(Collection).filter(Collection.workspace_id == workplace_id).delete(synchronize_session=False)
+    db.query(Department).filter(Department.workspace_id == workplace_id).delete(synchronize_session=False)
+    db.query(Group).filter(Group.workspace_id == workplace_id).delete(synchronize_session=False)
+    db.query(ChatSession).filter(ChatSession.workspace_id == workplace_id).delete(synchronize_session=False)
+
+    # Reassign any users whose active workspace was this workplace
+    other_ws = db.query(Workspace).filter(Workspace.id != workplace_id).first()
+    if other_ws:
+        db.query(User).filter(User.workspace_id == workplace_id).update(
+            {"workspace_id": other_ws.id}, synchronize_session=False
+        )
+        if admin.workspace_id == workplace_id:
+            admin.workspace_id = other_ws.id
+
+    db.query(Workspace).filter(Workspace.id == workplace_id).delete(synchronize_session=False)
+    db.commit()
+
+    record_audit_log(
+        db=db,
+        action="WORKPLACE_DELETED",
+        resource_type="workplace",
+        user=admin,
+        resource_id=workplace_id,
+        details={"name": ws.name},
+    )
+    return {"status": "success", "message": f"Workplace '{ws.name}' deleted successfully."}
+
+
+@router.post("/admin/system/purge-all-data")
+def purge_all_data(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Purge all documents, chunks, vector embeddings, chat sessions, collections,
+    and extra non-default workplaces to reset the app to a clean state.
+    """
+    try:
+        vector_store.reset()
+    except Exception as e:
+        app_logger.warning(f"Vector store reset warning: {e}")
+
+    db.query(ChunkRecord).delete(synchronize_session=False)
+    db.query(DocumentVersion).delete(synchronize_session=False)
+    db.query(DocumentAccess).delete(synchronize_session=False)
+    db.query(Document).delete(synchronize_session=False)
+    db.query(CollectionAccess).delete(synchronize_session=False)
+    db.query(Collection).delete(synchronize_session=False)
+    db.query(ChatMessage).delete(synchronize_session=False)
+    db.query(ChatSession).delete(synchronize_session=False)
+    db.query(SavedArtifact).delete(synchronize_session=False)
+    db.query(IngestionJob).delete(synchronize_session=False)
+
+    for dir_setting in [settings.UPLOAD_DIR, settings.PROCESSED_DIR]:
+        target_dir = settings.resolve_path(dir_setting)
+        if target_dir.exists():
+            for item in target_dir.iterdir():
+                if item.is_file():
+                    try:
+                        item.unlink()
+                    except Exception:
+                        pass
+                elif item.is_dir():
+                    try:
+                        shutil.rmtree(item)
+                    except Exception:
+                        pass
+
+    primary_ws = db.query(Workspace).filter(Workspace.id == admin.workspace_id).first()
+    if not primary_ws:
+        primary_ws = db.query(Workspace).order_by(Workspace.created_at.asc()).first()
+
+    if primary_ws:
+        extra_workplaces = db.query(Workspace).filter(Workspace.id != primary_ws.id).all()
+        for e_ws in extra_workplaces:
+            db.query(User).filter(User.workspace_id == e_ws.id).update(
+                {"workspace_id": primary_ws.id}, synchronize_session=False
+            )
+            db.query(Workspace).filter(Workspace.id == e_ws.id).delete(synchronize_session=False)
+
+        seed_workplace_structure(db, primary_ws, created_by=admin.username)
+
+    db.commit()
+
+    record_audit_log(
+        db=db,
+        action="SYSTEM_PURGE_ALL_DATA",
+        resource_type="system",
+        user=admin,
+        details={"message": "All data, documents, chunks, and extra workspaces purged."},
+    )
+
+    return {"status": "success", "message": "All database data and vector chunks successfully purged."}
+
+
 @router.get("/workplaces/my-approved")
 def list_my_approved_workplaces(
     current_user: User = Depends(get_current_user),

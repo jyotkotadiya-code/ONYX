@@ -209,4 +209,18 @@ class LocalVectorStore:
             }
 
 
+    def reset(self) -> None:
+        try:
+            if self._client is not None:
+                try:
+                    self._client.delete_collection(self.COLLECTION_NAME)
+                except Exception:
+                    pass
+            self._collection = None
+            self._get_collection()
+            app_logger.info("Reset local ChromaDB vector store.")
+        except Exception as e:
+            error_logger.error(f"Error resetting vector store: {e}")
+
+
 vector_store = LocalVectorStore()

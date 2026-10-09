@@ -710,6 +710,40 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
     notify('ok', `Created new workplace '${createWpName}'`);
   };
 
+  const handleDeleteWorkplace = async (workplaceId: string, workplaceName: string) => {
+    if (!window.confirm(`Are you sure you want to permanently delete workplace '${workplaceName}'? All associated collections and document settings will be removed.`)) return;
+    try {
+      const res = await fetch(`/api/workplaces/${workplaceId}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed deleting workplace');
+      notify('ok', `Workplace '${workplaceName}' deleted successfully.`);
+      onRefreshGlobalData();
+      fetchAdminData();
+    } catch (err: any) {
+      notify('err', err.message);
+    }
+  };
+
+  const handlePurgeAllSystemData = async () => {
+    if (!window.confirm('⚠️ WARNING: Are you sure you want to purge ALL documents, chunks, vector embeddings, and database data? This resets the app to a clean state for fresh onboarding.')) return;
+    try {
+      const res = await fetch('/api/admin/system/purge-all-data', {
+        method: 'POST',
+        headers: authHeaders,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed purging system data');
+      notify('ok', 'All database data and vector chunks successfully purged! App is clean.');
+      onRefreshGlobalData();
+      fetchAdminData();
+    } catch (err: any) {
+      notify('err', err.message);
+    }
+  };
+
   const filteredDocuments = documents.filter((d) => {
     if (docColFilter !== 'ALL' && d.collection !== docColFilter) return false;
     if (docPolicyFilter !== 'ALL' && d.access_level !== docPolicyFilter) return false;
@@ -1785,10 +1819,11 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
 
       {/* 7. WORKPLACE SETTINGS */}
       {section === 'settings' && (
-        <form
-          onSubmit={handleSaveWorkplaceSettings}
-          className="p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-5 max-w-3xl"
-        >
+        <div className="space-y-6 max-w-3xl">
+          <form
+            onSubmit={handleSaveWorkplaceSettings}
+            className="p-6 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-5"
+          >
           <div>
             <h3 className="text-base font-semibold">Workplace Profile & AI Assistant Settings</h3>
             <p className="text-xs text-zinc-400 mt-1">
@@ -1877,6 +1912,106 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
             Save Workplace Settings
           </button>
         </form>
+
+        {/* Workplaces Directory & Deletion Panel */}
+        <div className="pt-6 border-t border-zinc-200 dark:border-zinc-800 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Workplaces & Teams Directory
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Manage organization workspaces, switch contexts, or permanently remove obsolete workplaces.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCreateWpModal(true)}
+              className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-semibold hover:bg-emerald-500/25 transition flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Create Workplace</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {workplaces.map((wp) => (
+              <div
+                key={wp.id}
+                className={`p-4 rounded-2xl border transition space-y-3 ${
+                  wp.is_current || wp.id === workplace?.id
+                    ? 'bg-emerald-500/10 border-emerald-500/40'
+                    : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-100">
+                      {wp.name}
+                    </span>
+                  </div>
+                  {wp.is_current || wp.id === workplace?.id ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500 text-zinc-950">
+                      Active Workspace
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onSwitchWorkplace(wp.id)}
+                      className="px-2.5 py-1 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-[11px] font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition"
+                    >
+                      Switch
+                    </button>
+                  )}
+                </div>
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400 space-y-1">
+                  <div>{wp.description || 'Organization workplace'}</div>
+                  <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-400 pt-1">
+                    <span>Employees: {wp.employee_count ?? 0}</span>
+                    <span>•</span>
+                    <span>Documents: {wp.document_count ?? 0}</span>
+                  </div>
+                </div>
+                {workplaces.length > 1 && (
+                  <div className="pt-2 border-t border-zinc-200/60 dark:border-zinc-800/60 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteWorkplace(wp.id, wp.name)}
+                      className="px-2.5 py-1 rounded-lg border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 text-xs font-medium flex items-center gap-1 transition"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Delete Workplace</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Danger Zone: System Reset & Purge All Data */}
+        <div className="pt-6 border-t border-rose-500/20 space-y-3">
+          <div className="p-4 rounded-2xl bg-rose-500/5 border border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">
+                Danger Zone: System Data Purge & Reset
+              </h4>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 max-w-xl">
+                Wipe all uploaded documents, processed chunks, vector embeddings, chat messages, and non-default workplaces to return the system to a clean state for fresh onboarding.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handlePurgeAllSystemData}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-600/20 flex items-center justify-center gap-1.5 shrink-0 transition"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Purge All System Data</span>
+            </button>
+          </div>
+        </div>
+      </div>
       )}
 
       {/* 8. SECURITY AUDIT LOGS */}
