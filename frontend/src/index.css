@@ -84,3 +84,14 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(161, 161, 170, 0.45);
 }
+
+/* Prevent browser password autofill from overriding background color or tinting fields */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: inherit !important;
+  -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+  box-shadow: 0 0 0px 1000px transparent inset !important;
+  transition: background-color 5000000s ease-in-out 0s !important;
+}

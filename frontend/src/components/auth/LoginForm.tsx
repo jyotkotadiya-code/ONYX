@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PasswordInput } from './PasswordInput';
 import { AuthError } from './AuthError';
 import { AuthStatus, AuthTransitionState } from './AuthStatus';
@@ -22,6 +22,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
+  const [isFocused, setIsFocused] = useState(false);
+
+  // Clear any browser-forced autofill on mount
+  useEffect(() => {
+    setUsername('');
+    setPassword('');
+    const t = setTimeout(() => {
+      setUsername('');
+      setPassword('');
+    }, 100);
+    return () => clearTimeout(t);
+  }, []);
 
   const isProcessing = transitionState !== 'idle';
 
@@ -51,7 +63,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   }
 
   return (
-    <form onSubmit={handleFormSubmit} noValidate className="space-y-4">
+    <form onSubmit={handleFormSubmit} noValidate autoComplete="off" className="space-y-4">
+      {/* Hidden dummy inputs to consume browser password-manager autofill */}
+      <input type="text" name="fake_user_autofill_sink" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
+      <input type="password" name="fake_pass_autofill_sink" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />
+
       <AuthStatus transitionState={transitionState} sessionExpired={sessionExpired} />
 
       <div>
@@ -63,12 +79,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         </label>
         <input
           id="onyx-login-username"
-          name="username"
+          name="onyx_account_user"
           type="text"
           value={username}
           placeholder="Enter username or email..."
           disabled={isProcessing}
-          autoComplete="username"
+          readOnly={!isFocused}
+          onFocus={() => setIsFocused(true)}
+          autoComplete="new-password"
           aria-invalid={Boolean(fieldErrors.username)}
           aria-describedby={fieldErrors.username ? 'onyx-login-username-error' : undefined}
           onChange={(e) => {
@@ -101,9 +119,13 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         </label>
         <PasswordInput
           id="onyx-login-password"
+          name="onyx_account_secret"
           value={password}
           placeholder="Enter password..."
           disabled={isProcessing}
+          readOnly={!isFocused}
+          onFocus={() => setIsFocused(true)}
+          autoComplete="new-password"
           error={fieldErrors.password}
           onChange={(val) => {
             setPassword(val);

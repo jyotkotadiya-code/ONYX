@@ -9,6 +9,9 @@ interface PasswordInputProps {
   error?: string;
   autoComplete?: string;
   placeholder?: string;
+  name?: string;
+  readOnly?: boolean;
+  onFocus?: () => void;
 }
 
 /**
@@ -20,8 +23,11 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
   onChange,
   disabled = false,
   error,
-  autoComplete = 'current-password',
+  autoComplete = 'new-password',
   placeholder = 'Enter password...',
+  name = 'onyx_account_secret',
+  readOnly = false,
+  onFocus,
 }) => {
   const [visible, setVisible] = useState(false);
 
@@ -30,11 +36,13 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
       <div className="relative">
         <input
           id={id}
-          name="password"
+          name={name}
           type={visible ? 'text' : 'password'}
           value={value}
           placeholder={placeholder}
           disabled={disabled}
+          readOnly={readOnly}
+          onFocus={onFocus}
           autoComplete={autoComplete}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${id}-error` : undefined}
