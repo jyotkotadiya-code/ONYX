@@ -8,6 +8,7 @@ interface PasswordInputProps {
   disabled?: boolean;
   error?: string;
   autoComplete?: string;
+  placeholder?: string;
 }
 
 /**
@@ -20,6 +21,7 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
   disabled = false,
   error,
   autoComplete = 'current-password',
+  placeholder = 'Enter password...',
 }) => {
   const [visible, setVisible] = useState(false);
 
@@ -31,6 +33,7 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
           name="password"
           type={visible ? 'text' : 'password'}
           value={value}
+          placeholder={placeholder}
           disabled={disabled}
           autoComplete={autoComplete}
           aria-invalid={Boolean(error)}

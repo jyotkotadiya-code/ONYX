@@ -18,9 +18,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({
   errorMessage,
   sessionExpired = false,
 }) => {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
-  const [rememberMe, setRememberMe] = useState(true);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
 
   const isProcessing = transitionState !== 'idle';
@@ -66,6 +66,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           name="username"
           type="text"
           value={username}
+          placeholder="Enter username or email..."
           disabled={isProcessing}
           autoComplete="username"
           aria-invalid={Boolean(fieldErrors.username)}
@@ -101,6 +102,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
         <PasswordInput
           id="onyx-login-password"
           value={password}
+          placeholder="Enter password..."
           disabled={isProcessing}
           error={fieldErrors.password}
           onChange={(val) => {
@@ -121,34 +123,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({
           />
           <span>Remember me</span>
         </label>
-
-        <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-          <button
-            type="button"
-            disabled={isProcessing}
-            onClick={() => {
-              setUsername('admin');
-              setPassword('admin123');
-              setFieldErrors({});
-            }}
-            className="hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
-          >
-            Admin
-          </button>
-          <span>•</span>
-          <button
-            type="button"
-            disabled={isProcessing}
-            onClick={() => {
-              setUsername('member');
-              setPassword('member123');
-              setFieldErrors({});
-            }}
-            className="hover:text-zinc-800 dark:hover:text-zinc-200 transition-colors"
-          >
-            Member
-          </button>
-        </div>
       </div>
 
       {errorMessage && <AuthError title={errorTitle} message={errorMessage} />}
