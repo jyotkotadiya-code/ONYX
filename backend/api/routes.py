@@ -1199,7 +1199,7 @@ def invite_employee(
         invite_token=invite_code,
         invite_status="PENDING",
         workspace_id=admin.workspace_id,
-        allowed_collections_json=json.dumps(req.allowed_collections or ["General", "Company Policies", "Projects"]),
+        allowed_collections_json=json.dumps(req.allowed_collections or ["*"]),
         permissions_json=json.dumps([]),
         can_upload=bool(req.can_upload),
         token_version=1,
@@ -3384,7 +3384,13 @@ async def chat_with_knowledge_base(
 
             yield f"data: {json.dumps({'type': 'done', 'answer_found': ans_found, 'citations': final_citations, 'observability': obs, 'structured_response': structured_dict})}\n\n"
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        headers = {
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Content-Type": "text/event-stream; charset=utf-8",
+        }
+        return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
 
     # Non-streaming response
     fin_calc_res = financial_engine.execute_financial_query(question, ret["chunks"])

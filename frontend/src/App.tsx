@@ -661,67 +661,88 @@ export default function App() {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      const handleEvent = (evt: any) => {
+        if (evt.type === 'metadata') {
+          if (evt.session_id) setActiveSessionId(evt.session_id);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId ? { ...m, citations: evt.citations || [] } : m
+            )
+          );
+        } else if (evt.type === 'token') {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId ? { ...m, content: m.content + evt.token } : m
+            )
+          );
+        } else if (evt.type === 'done') {
+          const structResp: StructuredResponse | undefined =
+            evt.structured_response || evt.observability?.structured_response;
+          const finalContent =
+            !evt.answer_found && !isAdmin
+              ? "I couldn't find enough information in the knowledge available to your account."
+              : undefined;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? {
+                    ...m,
+                    content: finalContent || m.content,
+                    answer_found: evt.answer_found,
+                    citations: evt.citations || [],
+                    observability: evt.observability,
+                    structured_response: structResp,
+                  }
+                : m
+            )
+          );
+          if (evt.observability) {
+            setActiveObservability(evt.observability);
+          }
+          if (structResp) {
+            const hasVisuals = structResp.components?.some((c) =>
+              ['table', 'chart', 'stat', 'timeline', 'comparison'].includes(c.type)
+            );
+            if (hasVisuals || evt.observability?.route === 'workspace_followup') {
+              setActiveWorkspace(structResp);
+            }
+          }
+          fetchSystemData(false);
+        }
+      };
+
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) {
+          if (buffer.trim()) {
+            const trailing = buffer.split(/\r?\n\r?\n/);
+            for (const line of trailing) {
+              const clean = line.replace(/\r/g, '').trim();
+              if (!clean.startsWith('data:')) continue;
+              const jsonStr = clean.replace(/^data:\s*/, '').trim();
+              if (jsonStr) {
+                try {
+                  handleEvent(JSON.parse(jsonStr));
+                } catch {}
+              }
+            }
+          }
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
+        const lines = buffer.split(/\r?\n\r?\n/);
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const jsonStr = line.replace(/^data:\s*/, '').trim();
+          const clean = line.replace(/\r/g, '').trim();
+          if (!clean.startsWith('data:')) continue;
+          const jsonStr = clean.replace(/^data:\s*/, '').trim();
           if (!jsonStr) continue;
           try {
-            const evt = JSON.parse(jsonStr);
-            if (evt.type === 'metadata') {
-              if (evt.session_id) setActiveSessionId(evt.session_id);
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMsgId ? { ...m, citations: evt.citations || [] } : m
-                )
-              );
-            } else if (evt.type === 'token') {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMsgId ? { ...m, content: m.content + evt.token } : m
-                )
-              );
-            } else if (evt.type === 'done') {
-              const structResp: StructuredResponse | undefined =
-                evt.structured_response || evt.observability?.structured_response;
-              const finalContent =
-                !evt.answer_found && !isAdmin
-                  ? "I couldn't find enough information in the knowledge available to your account."
-                  : undefined;
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMsgId
-                    ? {
-                        ...m,
-                        content: finalContent || m.content,
-                        answer_found: evt.answer_found,
-                        citations: evt.citations || [],
-                        observability: evt.observability,
-                        structured_response: structResp,
-                      }
-                    : m
-                )
-              );
-              if (evt.observability) {
-                setActiveObservability(evt.observability);
-              }
-              if (structResp) {
-                const hasVisuals = structResp.components?.some((c) =>
-                  ['table', 'chart', 'stat', 'timeline', 'comparison'].includes(c.type)
-                );
-                if (hasVisuals || evt.observability?.route === 'workspace_followup') {
-                  setActiveWorkspace(structResp);
-                }
-              }
-              fetchSystemData(false);
-            }
-          } catch {}
+            handleEvent(JSON.parse(jsonStr));
+          } catch (e) {
+            console.error('Failed to parse SSE event:', e, jsonStr);
+          }
         }
       }
     } catch (err: any) {

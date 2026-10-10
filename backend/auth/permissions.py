@@ -62,6 +62,8 @@ def get_effective_permissions(user: User) -> list[str]:
 
     custom = user.custom_permissions
     if custom:
+        if "*" in custom:
+            return ["*"]
         perms = {p for p in custom if p in ALL_PERMISSIONS}
     else:
         perms = set(_employee_role_default_permissions)
