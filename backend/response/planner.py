@@ -27,6 +27,107 @@ def detect_query_intent(question: str) -> AllowedIntentType:
     return "answer"
 
 
+def extract_workspace_rows_fallback(state: dict[str, Any]) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+    """
+    Extract structured tabular/numeric rows from whatever components exist in the workspace
+    (e.g., text markdown, bullet points, key-value pairs, or previous tables/charts).
+    Ensures that transform buttons ('Make Table', 'Bar Chart', 'Line Chart', etc.) ALWAYS work.
+    """
+    components = list(state.get("components") or [])
+
+    # 1. Check existing table components
+    for comp in components:
+        if comp.get("type") == "table":
+            t_data = comp.get("data", {})
+            rows = t_data.get("rows", [])
+            cols = t_data.get("columns", [])
+            if rows:
+                if not cols:
+                    cols = [{"key": k, "label": k.replace("_", " ").title()} for k in rows[0].keys()]
+                return cols, rows
+
+    # 2. Check existing chart components
+    for comp in components:
+        if comp.get("type") == "chart":
+            c_data = comp.get("data", {})
+            rows = c_data.get("data", [])
+            if rows and isinstance(rows[0], dict):
+                cols = [{"key": k, "label": k.replace("_", " ").title()} for k in rows[0].keys()]
+                return cols, rows
+
+    # 3. Extract from text components markdown
+    extracted_rows: list[dict[str, Any]] = []
+    seen_labels: set[str] = set()
+
+    for comp in components:
+        if comp.get("type") == "text":
+            md = comp.get("data", {}).get("markdown", "")
+            lines = md.splitlines()
+
+            # A. Markdown Table syntax: | col1 | col2 | ... |
+            for i in range(len(lines) - 2):
+                l1 = lines[i].strip()
+                l2 = lines[i + 1].strip()
+                if l1.startswith("|") and l1.endswith("|") and ("---" in l2 or "| ---" in l2):
+                    header_parts = [h.strip() for h in l1.split("|") if h.strip()]
+                    if len(header_parts) >= 2:
+                        for j in range(i + 2, len(lines)):
+                            lr = lines[j].strip()
+                            if not lr.startswith("|"):
+                                break
+                            rparts = [p.strip() for p in lr.split("|") if p.strip()]
+                            if len(rparts) == len(header_parts):
+                                row_dict: dict[str, Any] = {}
+                                for hk, rv in zip(header_parts, rparts):
+                                    clean_k = re.sub(r"[^\w\s]", "", hk).strip().replace(" ", "_").lower() or "col"
+                                    nv = calculator.to_number(rv)
+                                    row_dict[clean_k] = nv if nv is not None else rv
+                                extracted_rows.append(row_dict)
+                        if extracted_rows:
+                            cols = [{"key": re.sub(r"[^\w\s]", "", hk).strip().replace(" ", "_").lower() or f"col_{idx}", "label": hk} for idx, hk in enumerate(header_parts)]
+                            return cols, extracted_rows
+
+            # B. Bullet points or line patterns: e.g. "- Jan 2024: ₹42,000 [source]" or "Period: Value"
+            bullet_pattern = re.compile(
+                r"^[\s\-*•0-9\.]*\s*([A-Za-z0-9\s,\.\(\)\-]+?)[:\-–=|\t]+\s*(?:[^\d\s]{1,4})?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:\[([^\]]+)\])?",
+                re.MULTILINE,
+            )
+            for m in bullet_pattern.finditer(md):
+                label = m.group(1).strip()
+                val_str = m.group(2).replace(",", "")
+                try:
+                    val = float(val_str)
+                except ValueError:
+                    val = calculator.to_number(val_str)
+                src = m.group(3) or "Uploaded Knowledge Base"
+
+                label_lower = label.lower().strip()
+                if (
+                    val is not None
+                    and val > 10
+                    and val not in (2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027)
+                    and label_lower not in ("blue", "teal", "year", "page", "version", "as of", "total", "table", "chart")
+                    and label_lower not in seen_labels
+                ):
+                    seen_labels.add(label_lower)
+                    extracted_rows.append({
+                        "period": label,
+                        "value": val,
+                        "formatted": f"₹{val:,.2f}" if "₹" in md else f"${val:,.2f}",
+                        "source": src,
+                    })
+
+    if extracted_rows:
+        cols = [
+            {"key": "period", "label": "Period / Item"},
+            {"key": "value", "label": "Amount / Value"},
+            {"key": "source", "label": "Source Document"},
+        ]
+        return cols, extracted_rows
+
+    return [], []
+
+
 def apply_workspace_followup_command(
     previous_response: dict[str, Any],
     command_text: str,
@@ -64,112 +165,124 @@ def apply_workspace_followup_command(
                 comp["type"] = "chart"
                 comp.setdefault("data", {})["chart_type"] = desired_chart_type
                 modified = True
+                break
         if not modified:
-            for comp in components:
-                if comp.get("type") == "table":
-                    t_data = comp.get("data", {})
-                    cols = t_data.get("columns", [])
-                    rows = t_data.get("rows", [])
-                    if len(cols) >= 2 and rows:
-                        x_key = cols[0]["key"] if isinstance(cols[0], dict) else str(cols[0])
-                        y_key = cols[-1]["key"] if isinstance(cols[-1], dict) else str(cols[-1])
-                        for col in cols[1:]:
-                            ck = col["key"] if isinstance(col, dict) else str(col)
-                            if calculator.to_number(rows[0].get(ck)) is not None:
-                                y_key = ck
-                                break
-                        components.append(
-                            {
-                                "id": f"chart_0{len(components) + 1}",
-                                "type": "chart",
-                                "title": t_data.get("title", "Chart View"),
-                                "data": {
-                                    "chart_type": desired_chart_type,
-                                    "title": t_data.get("title", "Chart View"),
-                                    "x_axis": {"key": x_key, "label": x_key.replace("_", " ").title()},
-                                    "y_axis": {"key": y_key, "label": y_key.replace("_", " ").title()},
-                                    "series": [{"key": y_key, "label": y_key.replace("_", " ").title()}],
-                                    "data": rows,
-                                },
-                            }
-                        )
+            cols, rows = extract_workspace_rows_fallback(state)
+            if rows:
+                x_key = cols[0]["key"] if cols else "period"
+                y_key = "value" if "value" in rows[0] else (cols[1]["key"] if len(cols) > 1 else "period")
+                for k, v in rows[0].items():
+                    if calculator.to_number(v) is not None:
+                        y_key = k
                         break
+                components.append(
+                    {
+                        "id": f"chart_0{len(components) + 1}",
+                        "type": "chart",
+                        "title": state.get("title", "Visual Trend Chart"),
+                        "data": {
+                            "chart_type": desired_chart_type,
+                            "title": state.get("title", "Visual Trend Chart"),
+                            "x_axis": {"key": x_key, "label": x_key.replace("_", " ").title()},
+                            "y_axis": {"key": y_key, "label": y_key.replace("_", " ").title()},
+                            "series": [{"key": y_key, "label": y_key.replace("_", " ").title()}],
+                            "data": rows,
+                        },
+                    }
+                )
 
-    if "make this a table" in cmd or "as a table" in cmd or "to a table" in cmd:
+    if any(k in cmd for k in ["make this a table", "as a table", "to a table", "make table", "show table"]):
         has_table = any(c.get("type") == "table" for c in components)
         if not has_table:
-            for comp in components:
-                if comp.get("type") == "chart":
-                    c_data = comp.get("data", {})
-                    rows = c_data.get("data", [])
-                    if rows and isinstance(rows[0], dict):
-                        cols = [{"key": k, "label": k.replace("_", " ").title()} for k in rows[0].keys()]
-                        components.append(
-                            {
-                                "id": f"table_0{len(components) + 1}",
-                                "type": "table",
-                                "title": c_data.get("title", "Structured Data Table"),
-                                "data": {
-                                    "title": c_data.get("title", "Structured Data Table"),
-                                    "columns": cols,
-                                    "rows": rows,
-                                },
-                            }
-                        )
-                        break
+            cols, rows = extract_workspace_rows_fallback(state)
+            if rows:
+                components.append(
+                    {
+                        "id": f"table_0{len(components) + 1}",
+                        "type": "table",
+                        "title": state.get("title", "Structured Data Table"),
+                        "data": {
+                            "title": state.get("title", "Structured Data Table"),
+                            "columns": cols,
+                            "rows": rows,
+                        },
+                    }
+                )
 
     top_n_match = re.search(r"top\s+(\d+)", cmd)
     if top_n_match:
         limit_n = int(top_n_match.group(1))
-        for comp in components:
-            if comp.get("type") == "table":
-                rows = comp.get("data", {}).get("rows", [])
-                if rows and isinstance(rows[0], dict):
-                    num_keys = [k for k, v in rows[0].items() if calculator.to_number(v) is not None]
-                    if num_keys:
-                        comp["data"]["rows"] = calculator.sort_rows(rows, num_keys[-1], descending=True, limit=limit_n)
-                    else:
-                        comp["data"]["rows"] = rows[:limit_n]
-            elif comp.get("type") == "chart":
-                rows = comp.get("data", {}).get("data", [])
-                y_key = comp.get("data", {}).get("y_axis", {}).get("key")
-                if rows and y_key:
-                    comp["data"]["data"] = calculator.sort_rows(rows, y_key, descending=True, limit=limit_n)
+        has_data_comp = any(c.get("type") in ("table", "chart") for c in components)
+        if not has_data_comp:
+            cols, rows = extract_workspace_rows_fallback(state)
+            if rows:
+                num_k = "value" if "value" in rows[0] else None
+                sorted_rows = calculator.sort_rows(rows, num_k, descending=True, limit=limit_n) if num_k else rows[:limit_n]
+                components.append(
+                    {
+                        "id": f"table_top_{limit_n}",
+                        "type": "table",
+                        "title": f"Top {limit_n} Summary",
+                        "data": {
+                            "title": f"Top {limit_n} Summary",
+                            "columns": cols,
+                            "rows": sorted_rows,
+                        },
+                    }
+                )
+        else:
+            for comp in components:
+                if comp.get("type") == "table":
+                    rows = comp.get("data", {}).get("rows", [])
+                    if rows and isinstance(rows[0], dict):
+                        num_keys = [k for k, v in rows[0].items() if calculator.to_number(v) is not None]
+                        if num_keys:
+                            comp["data"]["rows"] = calculator.sort_rows(rows, num_keys[-1], descending=True, limit=limit_n)
+                        else:
+                            comp["data"]["rows"] = rows[:limit_n]
+                elif comp.get("type") == "chart":
+                    rows = comp.get("data", {}).get("data", [])
+                    y_key = comp.get("data", {}).get("y_axis", {}).get("key")
+                    if rows and y_key:
+                        comp["data"]["data"] = calculator.sort_rows(rows, y_key, descending=True, limit=limit_n)
 
-    rem_match = re.search(r"remove\s+the\s+(chart|table|stat|kpi|timeline|comparison)", cmd)
-    if rem_match:
-        rem_type = rem_match.group(1).lower()
-        if rem_type == "kpi":
-            rem_type = "stat"
-        components = [c for c in components if c.get("type") != rem_type]
+    if any(k in cmd for k in ["remove the chart", "remove chart"]):
+        components = [c for c in components if c.get("type") != "chart"]
 
-    if "percentage change" in cmd:
-        for comp in components:
-            if comp.get("type") == "chart":
-                rows = comp.get("data", {}).get("data", [])
-                y_key = comp.get("data", {}).get("y_axis", {}).get("key")
-                if len(rows) >= 2 and y_key:
-                    first_v = rows[0].get(y_key)
-                    last_v = rows[-1].get(y_key)
-                    pct = calculator.compute_percentage_change(first_v, last_v)
-                    if pct is not None:
-                        components.insert(
-                            0,
-                            {
-                                "id": f"stat_pct_{state['version']}",
-                                "type": "stat",
-                                "title": "Calculated Percentage Change",
-                                "data": {
-                                    "label": "Overall Percentage Change",
-                                    "value": round(pct, 2),
-                                    "format": "percent",
-                                    "change": round(pct, 2),
-                                    "change_label": f"From {first_v} to {last_v}",
-                                    "trend": "up" if pct >= 0 else "down",
-                                },
-                            },
-                        )
+    if any(k in cmd for k in ["remove the table", "remove table"]):
+        components = [c for c in components if c.get("type") != "table"]
+
+    if any(k in cmd for k in ["percentage change", "% change", "%"]):
+        cols, rows = extract_workspace_rows_fallback(state)
+        if len(rows) >= 2:
+            num_k = "value" if "value" in rows[0] else None
+            if not num_k:
+                for k, v in rows[0].items():
+                    if calculator.to_number(v) is not None:
+                        num_k = k
                         break
+            if num_k:
+                first_v = rows[0].get(num_k)
+                last_v = rows[-1].get(num_k)
+                pct = calculator.compute_percentage_change(first_v, last_v)
+                if pct is not None:
+                    components = [c for c in components if not str(c.get("id", "")).startswith("stat_pct_")]
+                    components.insert(
+                        0,
+                        {
+                            "id": f"stat_pct_{state['version']}",
+                            "type": "stat",
+                            "title": "Calculated Percentage Change",
+                            "data": {
+                                "label": "Overall Growth / Change",
+                                "value": round(pct, 2),
+                                "format": "percent",
+                                "change": round(pct, 2),
+                                "change_label": f"From {first_v} to {last_v}",
+                                "trend": "up" if pct >= 0 else "down",
+                            },
+                        },
+                    )
 
     state["components"] = components
     return validate_and_repair_structured_response(

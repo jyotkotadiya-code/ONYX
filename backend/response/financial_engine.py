@@ -330,6 +330,14 @@ class FinancialDataEngine:
         if not records:
             return None
 
+        # Multi-document / qualitative questions should be handled by RAG synthesis
+        if any(w in q_lower for w in ["expense", "caused", "why", "who", "deadline", "lead architect", "policy", "project mercury"]):
+            return None
+
+        # Categorical / Department queries are handled by categorical series analysis
+        if any(w in q_lower for w in ["department", "departments", "category", "categories", "product", "products", "employee", "employees", "staff", "role"]):
+            return None
+
         currency_symbol = "₹" if records[0].currency == "INR" else ("€" if records[0].currency == "EUR" else "$")
 
         # Case 1: Specific Month Query (e.g. "What was our revenue in January?", "January 2025 revenue")
@@ -574,6 +582,37 @@ class FinancialDataEngine:
                     ],
                 }
 
+            if len(records) >= 2 and any(w in q_lower for w in ["increase", "growth", "how much did"]):
+                first_r = records[0]
+                last_r = records[-1]
+                inc, pct = cls.calculate_growth(last_r.amount, first_r.amount)
+                pct_str = f"{pct:.2f}%" if pct is not None else "N/A"
+                ans_text = (
+                    f"{records[0].metric.title()} increased by **{currency_symbol}{inc:,.2f}** "
+                    f"(**+{pct_str}**) from {first_r.period} to {last_r.period}."
+                )
+                return {
+                    "is_financial": True,
+                    "answer": ans_text,
+                    "metric": "period_growth",
+                    "components": [
+                        {
+                            "id": "stat_growth_01",
+                            "type": "stat",
+                            "title": f"Calculated {records[0].metric.title()} Increase",
+                            "data": {
+                                "label": f"Increase ({first_r.period} → {last_r.period})",
+                                "value": inc if inc is not None else last_r.amount,
+                                "format": "currency",
+                                "currency": records[0].currency,
+                                "change": round(pct, 2) if pct is not None else 0.0,
+                                "change_label": f"From {first_r.amount:,.0f} to {last_r.amount:,.0f}",
+                                "trend": "up" if (pct and pct >= 0) else "down",
+                            },
+                        }
+                    ],
+                }
+
         # Case 6: Total Revenue (General)
         if "total" in q_lower and ("revenue" in q_lower or "sales" in q_lower):
             tot = cls.calculate_total(records)
@@ -599,54 +638,119 @@ class FinancialDataEngine:
                 ],
             }
 
-        # Case 7: Show in a Table or Generate a Chart
-        if any(w in q_lower for w in ["table", "chart", "monthly sales", "monthly revenue", "breakdown"]):
+        # Case 7: Show in a Table, Chart, or Comprehensive Report/Overview
+        report_terms = [
+            "table", "chart", "monthly sales", "monthly revenue", "breakdown",
+            "report", "revenue", "sales", "overview", "summary", "data", "performance",
+            "figures", "financial", "graph", "trend", "all months", "24-month", "annual"
+        ]
+        if any(w in q_lower for w in report_terms) and records:
             tbl_rows = [
                 {
                     "period": r.period,
+                    "month": r.month or r.period,
                     "revenue": r.amount,
+                    "value": r.amount,
                     "formatted": f"{currency_symbol}{r.amount:,.2f}",
                     "source": r.source_document,
                 }
                 for r in records
             ]
             tot = cls.calculate_total(records)
-            ans_text = (
-                f"Here is the monthly {records[0].metric} breakdown ({len(records)} periods, "
-                f"totaling **{currency_symbol}{tot:,.2f}**):"
+            avg = round(cls.calculate_average(records), 2)
+            peak = cls.find_highest_month(records)
+
+            components: list[dict[str, Any]] = [
+                {
+                    "id": "stat_tot_01",
+                    "type": "stat",
+                    "title": f"Total {records[0].metric.title()}",
+                    "data": {
+                        "label": f"Total {records[0].metric.title()}",
+                        "value": tot,
+                        "format": "currency",
+                        "currency": records[0].currency,
+                        "change_label": f"Sum across {len(records)} periods",
+                        "trend": "neutral",
+                    },
+                },
+                {
+                    "id": "stat_avg_01",
+                    "type": "stat",
+                    "title": "Average Monthly",
+                    "data": {
+                        "label": "Average Monthly",
+                        "value": avg,
+                        "format": "currency",
+                        "currency": records[0].currency,
+                        "change_label": f"Across {len(records)} periods",
+                        "trend": "neutral",
+                    },
+                },
+            ]
+            if peak:
+                components.append(
+                    {
+                        "id": "stat_peak_01",
+                        "type": "stat",
+                        "title": "Peak Month",
+                        "data": {
+                            "label": f"Peak: {peak.period}",
+                            "value": peak.amount,
+                            "format": "currency",
+                            "currency": records[0].currency,
+                            "change_label": "Highest recorded month",
+                            "trend": "up",
+                        },
+                    }
+                )
+
+            components.append(
+                {
+                    "id": "table_fin_01",
+                    "type": "table",
+                    "title": f"Monthly {records[0].metric.title()} Breakdown",
+                    "data": {
+                        "title": f"Monthly {records[0].metric.title()} Breakdown",
+                        "columns": [
+                            {"key": "period", "label": "Period"},
+                            {"key": "revenue", "label": f"{records[0].metric.title()} ({records[0].currency})"},
+                            {"key": "source", "label": "Source Document"},
+                        ],
+                        "rows": tbl_rows,
+                    },
+                }
             )
+
+            components.append(
+                {
+                    "id": "chart_fin_01",
+                    "type": "chart",
+                    "title": f"Monthly {records[0].metric.title()} Trend",
+                    "data": {
+                        "chart_type": "line" if (len(records) >= 6 or any(w in q_lower for w in ["line", "trend", "by month", "over time", "monthly"])) else "bar",
+                        "title": f"Monthly {records[0].metric.title()} Trend",
+                        "x_axis": {"key": "period", "label": "Period"},
+                        "y_axis": {"key": "revenue", "label": f"{records[0].metric.title()} ({records[0].currency})"},
+                        "series": [{"key": "revenue", "label": records[0].metric.title()}],
+                        "data": tbl_rows,
+                    },
+                }
+            )
+
+            ans_text = (
+                f"Here is the verified financial {records[0].metric} report across **{len(records)} periods**:\n\n"
+                f"- **Total {records[0].metric.title()}:** {currency_symbol}{tot:,.2f}\n"
+                f"- **Average Monthly {records[0].metric.title()}:** {currency_symbol}{avg:,.2f}\n"
+                + (f"- **Peak Month:** {peak.period} ({currency_symbol}{peak.amount:,.2f})\n" if peak else "")
+                + f"\nInteractive table and visual trend charts are available in the artifact canvas."
+            )
+
             return {
                 "is_financial": True,
                 "answer": ans_text,
                 "metric": "table_chart",
-                "components": [
-                    {
-                        "id": "table_fin_01",
-                        "type": "table",
-                        "title": f"Monthly {records[0].metric.title()} Breakdown",
-                        "data": {
-                            "title": f"Monthly {records[0].metric.title()} Breakdown",
-                            "columns": [
-                                {"key": "period", "label": "Period"},
-                                {"key": "revenue", "label": f"{records[0].metric.title()} ({records[0].currency})"},
-                            ],
-                            "rows": tbl_rows,
-                        },
-                    },
-                    {
-                        "id": "chart_fin_01",
-                        "type": "chart",
-                        "title": f"Monthly {records[0].metric.title()} Trend",
-                        "data": {
-                            "chart_type": "bar" if len(records) <= 6 else "line",
-                            "title": f"Monthly {records[0].metric.title()} Trend",
-                            "x_axis": {"key": "period", "label": "Period"},
-                            "y_axis": {"key": "revenue", "label": f"{records[0].metric.title()} ({records[0].currency})"},
-                            "series": [{"key": "revenue", "label": records[0].metric.title()}],
-                            "data": tbl_rows,
-                        },
-                    },
-                ],
+                "components": components,
             }
 
         return None

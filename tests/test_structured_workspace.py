@@ -268,3 +268,61 @@ def test_workspace_followup_commands_and_version_history():
     assert len(v3["history_versions"]) == 2
     chart_comp = next(c for c in v3["components"] if c["type"] == "chart")
     assert chart_comp["data"]["chart_type"] == "bar"
+
+
+def test_text_only_workspace_transformation_buttons():
+    """
+    Directly tests the user's reported bug where a workspace with ONLY text
+    could not be transformed when clicking 'Make Table', 'Bar Chart', 'Line Chart', etc.
+    """
+    raw_markdown = (
+        "Based on the uploaded knowledge base:\n\n"
+        "- Jan 2024: 42,000 [sample_organization_monthly_revenue_24_months.pdf — Page 2]\n"
+        "- Feb 2024: 44,500 [sample_organization_monthly_revenue_24_months.pdf — Page 2]\n"
+        "- Mar 2024: 43,800 [sample_organization_monthly_revenue_24_months.pdf — Page 2]\n"
+        "- Apr 2024: 47,200 [sample_organization_monthly_revenue_24_months.pdf — Page 2]\n"
+    )
+    text_only_ws = {
+        "schema_version": "1.0",
+        "version": 1,
+        "title": "Revenue report",
+        "intent": "answer",
+        "response_type": "text",
+        "components": [
+            {
+                "id": "text_01",
+                "type": "text",
+                "title": "Answer",
+                "data": {"markdown": raw_markdown},
+            }
+        ],
+        "sources": [{"filename": "sample_organization_monthly_revenue_24_months.pdf", "locator": "Page 2"}],
+        "confidence": 1.0,
+        "history_versions": [],
+    }
+
+    # 1. User clicks 'Make Table' -> must create table!
+    ws_table = apply_workspace_followup_command(text_only_ws, "Make this a table").model_dump()
+    assert ws_table["version"] == 2
+    assert any(c["type"] == "table" for c in ws_table["components"])
+    table_comp = next(c for c in ws_table["components"] if c["type"] == "table")
+    assert len(table_comp["data"]["rows"]) == 4
+
+    # 2. User clicks 'Bar Chart' -> must create bar chart!
+    ws_bar = apply_workspace_followup_command(text_only_ws, "Show this as a bar chart").model_dump()
+    assert ws_bar["version"] == 2
+    assert any(c["type"] == "chart" for c in ws_bar["components"])
+    bar_comp = next(c for c in ws_bar["components"] if c["type"] == "chart")
+    assert bar_comp["data"]["chart_type"] == "bar"
+    assert len(bar_comp["data"]["data"]) == 4
+
+    # 3. User clicks 'Line Chart' -> must create line chart!
+    ws_line = apply_workspace_followup_command(text_only_ws, "Show this as a line chart").model_dump()
+    assert ws_line["version"] == 2
+    line_comp = next(c for c in ws_line["components"] if c["type"] == "chart")
+    assert line_comp["data"]["chart_type"] == "line"
+
+    # 4. User clicks 'Add percentage change' -> must create stat card!
+    ws_pct = apply_workspace_followup_command(text_only_ws, "Add percentage change").model_dump()
+    assert any(c["type"] == "stat" for c in ws_pct["components"])
+

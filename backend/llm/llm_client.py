@@ -230,7 +230,22 @@ class LocalLLMClient:
         synthesized_points: list[str] = []
         seen_lines: set[str] = set()
 
-        for ch in retrieved_chunks[:5]:
+        q_lower = question.lower()
+        is_revenue_q = any(w in q_lower for w in ["revenue", "turnover", "sales", "fiscal"])
+        is_salary_q = any(w in q_lower for w in ["salary", "salaries", "compensation", "payroll", "stipend", "wages"])
+
+        # Prioritize relevant chunks matching domain
+        candidate_chunks = list(retrieved_chunks[:6])
+        if is_revenue_q:
+            rev_chunks = [ch for ch in candidate_chunks if "salary" not in ch.get("citation", {}).get("filename", "").lower()]
+            if rev_chunks:
+                candidate_chunks = rev_chunks
+        elif is_salary_q:
+            sal_chunks = [ch for ch in candidate_chunks if "revenue" not in ch.get("citation", {}).get("filename", "").lower()]
+            if sal_chunks:
+                candidate_chunks = sal_chunks
+
+        for ch in candidate_chunks[:5]:
             content = ch.get("content", "")
             cit = ch.get("citation", {})
             source_tag = f"[{cit.get('filename', 'source')} — {cit.get('locator', 'p.1')}]"
@@ -260,8 +275,11 @@ class LocalLLMClient:
                 if not re.search(r"\d", ln) and ("month" in ln.lower() or "revenue" in ln.lower() or "breakdown" in ln.lower()):
                     score *= 0.1
 
-                if specific_q_words and spec_hits == 0 and not has_month:
-                    score *= 0.15
+                if is_revenue_q and not re.search(r"[0-9][0-9,]*", ln):
+                    score *= 0.1
+
+                if specific_q_words and spec_hits == 0:
+                    score *= 0.1
                 scored_lines.append((score, ln))
 
             scored_lines.sort(key=lambda x: x[0], reverse=True)
