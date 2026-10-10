@@ -1,7 +1,8 @@
 # ONYX — 100% Local & Privacy-First Multimodal RAG Knowledge System
 
 > **DOCUMENTS NEVER LEAVE THIS COMPUTER.**  
-> Zero cloud AI APIs. Zero external vector databases. Zero telemetry (`OFFLINE_MODE=true`).
+> Zero cloud AI APIs. Zero external vector databases. Zero telemetry (`OFFLINE_MODE=true`).  
+> 📖 **Full System Architecture & Pitch Guide:** [docs/PROJECT_MASTER_DOCUMENTATION.md](docs/PROJECT_MASTER_DOCUMENTATION.md)
 
 ---
 
