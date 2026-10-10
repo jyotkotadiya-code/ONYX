@@ -277,7 +277,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
             department_id: newDeptId || null,
             group_ids: newGroupIds,
             can_upload: newCanUpload,
-            allowed_collections: ['General', 'Projects', 'Company Policies', 'Engineering'],
+            allowed_collections: ['General', 'Company Policies'],
           }),
         });
         const data = await res.json();
@@ -308,7 +308,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
           department_id: newDeptId || null,
           group_ids: newGroupIds,
           can_upload: newCanUpload,
-          allowed_collections: ['General', 'Projects', 'Research', 'Product', 'Engineering'],
+          allowed_collections: ['General', 'Company Policies'],
         }),
       });
       const data = await res.json();
