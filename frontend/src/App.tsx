@@ -249,7 +249,10 @@ export default function App() {
 
   const authHeaders = (overrideToken?: string | null): Record<string, string> => {
     const t = overrideToken !== undefined ? overrideToken : token;
-    return t ? { Authorization: `Bearer ${t}` } : {};
+    return {
+      ...(t ? { Authorization: `Bearer ${t}` } : {}),
+      'ngrok-skip-browser-warning': 'true',
+    };
   };
 
   const handleSessionExpired = () => {
@@ -363,7 +366,7 @@ export default function App() {
 
   useEffect(() => {
     fetchSystemData(true);
-    const interval = setInterval(() => fetchSystemData(false), 10000);
+    const interval = setInterval(() => fetchSystemData(false), 30000);
     return () => clearInterval(interval);
   }, [token]);
 

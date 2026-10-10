@@ -35,3 +35,5 @@ Thumbs.db
 .vscode/
 .idea/
 scratch/
+bin/
+*.exe

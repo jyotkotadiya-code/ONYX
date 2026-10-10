@@ -1,0 +1,85 @@
+CLIENT TERMS & POLICIES
+
+These terms and policies define the working relationship between **[Your Company Name]** and its clients. By confirming a project, making a payment, or approving a proposal, the client agrees to the following terms.
+
+1. Project Scope & Deliverables
+- Every project will follow the scope, features, deliverables, and timeline agreed upon in the approved proposal.
+- Any additional features, pages, revisions, or services outside the agreed scope may incur extra charges.
+- Work on additional requirements will begin after the client approves the revised cost and timeline.
+
+2. Payment Policy
+- A 50% advance payment is required before work begins, unless otherwise agreed in writing.
+- The remaining 50% must be paid before final delivery, website launch, or transfer of project files.
+- Payments made for completed work, purchased resources, or services already delivered are non-refundable.
+- Delays in payment may result in a pause in project work or delivery.
+
+3. Revisions & Changes
+- The number of revisions included will be specified in the project proposal.
+- Revisions must remain within the originally approved project scope.
+- Major design changes, new requirements, or changes requested after final approval may be charged separately.
+- Client approval of a design, layout, or deliverable confirms acceptance of that stage.
+
+4. Client Responsibilities
+The client agrees to:
+- Provide accurate content, images, logos, business information, and other required materials on time.
+- Review designs and deliverables and provide consolidated feedback within a reasonable timeframe.
+- Ensure that supplied materials do not violate third-party intellectual property rights.
+- Provide necessary access to domains, hosting, accounts, and other systems when required.
+
+Delays caused by missing information, approvals, or access may extend the project timeline.
+
+5. Project Timeline & Delays
+- Estimated timelines will be communicated before the project begins.
+- Timelines depend on timely client feedback, approvals, and payment.
+- Delays caused by third-party services, technical issues, or circumstances beyond our reasonable control may affect delivery dates.
+- Any revised timeline will be communicated to the client.
+
+6. Website Domain, Hosting & Maintenance
+- Domain registration, hosting, SSL certificates, and maintenance will follow the package or proposal selected by the client.
+- Any included domain or hosting service is subject to the stated validity period and package conditions.
+- Renewal charges must be paid before expiry to avoid service interruption.
+- Ongoing maintenance, content updates, security monitoring, and technical support are included only when explicitly stated in the agreement.
+- Third-party services, premium plugins, APIs, subscriptions, and transaction fees may incur additional charges.
+
+7. Intellectual Property & Ownership
+- Upon full payment, ownership of the final custom deliverables will transfer to the client to the extent agreed in the project proposal and permitted by law.
+- Third-party assets, fonts, software, plugins, templates, and licensed materials remain subject to their respective licence terms.
+- Unpaid work, unused concepts, and rejected design drafts remain the property of the company unless otherwise agreed in writing.
+- The company may display completed projects in its portfolio or marketing materials unless the client requests confidentiality in writing before publication.
+
+8. Confidentiality & Data Protection
+- Both parties agree to handle confidential business information responsibly.
+- Client credentials, private documents, customer information, and business data will not be intentionally disclosed to unauthorised parties.
+- The client is responsible for providing only the information necessary for the project and for obtaining any permissions required to share it.
+- Any specific confidentiality or data-processing obligations should be documented separately where required.
+
+9. Cancellation & Refunds
+- If a client cancels a project after work has started, payment for completed work, committed costs, and applicable non-cancellable expenses may be retained or charged.
+- Any refundable amount will be calculated based on work completed, payments received, and expenses incurred.
+- If the company terminates a project without delivering the agreed work, the parties will settle any applicable refund or outstanding payment fairly, according to the written agreement and applicable law.
+- Delays, cancellations, and refund requests must be communicated in writing.
+
+10. Third-Party Services & Limitations
+- The company is not responsible for outages, policy changes, price increases, or service interruptions caused by third-party platforms or providers.
+- Search-engine rankings, advertising performance, sales, leads, traffic, and business growth cannot be guaranteed unless a specific measurable commitment is expressly agreed in writing.
+- The company will make reasonable efforts to deliver work according to the approved requirements.
+
+11. Support & Bug Fixes
+- Any complimentary support period or warranty will be stated in the project proposal.
+- Bugs that prevent agreed features from functioning as specified may be corrected during the applicable warranty period.
+- New features, changes to approved requirements, third-party failures, and issues caused by unauthorised modifications may be chargeable.
+- Support outside the agreed period may require a separate maintenance agreement.
+
+12. Communication & Approvals
+- Project communication and approvals should take place through the mutually agreed communication channels.
+- Written confirmation will be used to document important decisions, scope changes, approvals, and additional charges.
+- The client is responsible for reviewing deliverables before providing final approval.
+
+13. Limitation of Liability
+To the extent permitted by applicable law, the company will not be liable for indirect or consequential losses arising from the use of delivered services. Nothing in these terms excludes liability that cannot legally be excluded.
+
+14. Governing Law & Disputes
+These terms are intended to be governed by the laws of India. The parties will first attempt to resolve disputes through good-faith discussion. Any applicable jurisdiction and dispute-resolution arrangements should be specified in the signed agreement.
+
+15. Acceptance of Terms
+By approving a proposal, confirming a project, or making a payment, the client acknowledges that they have read and accepted these terms, subject to any separately signed agreement.
