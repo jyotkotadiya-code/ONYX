@@ -678,16 +678,12 @@ export default function App() {
         } else if (evt.type === 'done') {
           const structResp: StructuredResponse | undefined =
             evt.structured_response || evt.observability?.structured_response;
-          const finalContent =
-            !evt.answer_found && !isAdmin
-              ? "I couldn't find enough information in the knowledge available to your account."
-              : undefined;
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantMsgId
                 ? {
                     ...m,
-                    content: finalContent || m.content,
+                    content: m.content || evt.answer || '',
                     answer_found: evt.answer_found,
                     citations: evt.citations || [],
                     observability: evt.observability,

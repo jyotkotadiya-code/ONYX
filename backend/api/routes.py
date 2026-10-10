@@ -100,6 +100,8 @@ from backend.tools.vectorizer import ImageVectorizationError, vector_converter
 
 router = APIRouter(prefix="/api")
 
+UNAUTHORIZED_DATA_RESPONSE = "you are not allow to see  that data."
+
 EMPLOYEE_EMPTY_KNOWLEDGE_RESPONSE = (
     "I couldn't find enough reliable information in the uploaded data available to your account to answer that question."
 )
@@ -3069,6 +3071,111 @@ EMPLOYEE_EMPTY_KNOWLEDGE_RESPONSE = (
 )
 
 
+def is_unauthorized_user_query(
+    db: Session,
+    user: User,
+    question: str,
+    requested_collection: Optional[str] = None,
+    authorized_doc_ids: Optional[list[str]] = None,
+) -> bool:
+    """
+    Deterministically check if a non-admin user is asking for restricted data:
+    1. Direct collection mismatch
+    2. Finance / Revenue query when user has no access to Finance collection
+    3. HR / Salary query when user has no access to HR collection
+    4. Explicit reference to unauthorized document names in the workspace
+    """
+    if user.is_admin:
+        return False
+
+    allowed_cols = user.allowed_collections or []
+    is_all_cols = "*" in allowed_cols
+
+    # 1. Collection filter restriction
+    if requested_collection and requested_collection.upper() != "ALL":
+        if not is_all_cols and requested_collection not in allowed_cols:
+            return True
+
+    q_lower = question.lower()
+
+    # 2. Finance / Revenue queries when user lacks Finance access
+    fin_terms = [
+        "revenue", "sales", "monthly revenue", "annual revenue", "total revenue",
+        "turnover", "profit", "margin", "financial report", "financials",
+        "financial data", "income statement", "balance sheet", "cash flow", "earnings",
+    ]
+    if any(k in q_lower for k in fin_terms):
+        if not is_all_cols and "Finance" not in allowed_cols:
+            return True
+
+    # 3. HR / Salary queries when user lacks HR access
+    salary_terms = [
+        "salary", "salaries", "compensation", "payroll", "pay slip",
+        "wage", "wages", "stipend", "employee salary",
+    ]
+    if any(k in q_lower for k in salary_terms):
+        if not is_all_cols and "HR" not in allowed_cols:
+            return True
+
+    # 4. Check if referencing unauthorized documents in this workspace
+    if authorized_doc_ids is not None:
+        unauth_docs = (
+            db.query(Document)
+            .filter(
+                Document.workspace_id == user.workspace_id,
+                Document.status == "Ready",
+                ~Document.id.in_(authorized_doc_ids) if authorized_doc_ids else True,
+            )
+            .all()
+        )
+        for udoc in unauth_docs:
+            fname = (udoc.filename or "").lower()
+            fname_stem = fname.rsplit(".", 1)[0]
+            if fname and (fname in q_lower or (len(fname_stem) > 4 and fname_stem in q_lower)):
+                return True
+
+    return False
+
+
+def check_unauthorized_content_match(
+    db: Session,
+    user: User,
+    question: str,
+    authorized_doc_ids: list[str],
+) -> bool:
+    """
+    Check if a question that found no evidence in authorized documents
+    actually matches documents that exist in the workspace that the user is NOT allowed to see.
+    """
+    if user.is_admin:
+        return False
+    unauth_doc_rows = (
+        db.query(Document.id)
+        .filter(
+            Document.workspace_id == user.workspace_id,
+            Document.status == "Ready",
+            ~Document.id.in_(authorized_doc_ids) if authorized_doc_ids else True,
+        )
+        .all()
+    )
+    unauth_ids = [r[0] for r in unauth_doc_rows if r[0]]
+    if not unauth_ids:
+        return False
+    unauth_ret = retriever.retrieve(
+        db=db,
+        query=question,
+        top_k=3,
+        mode="rag",
+        allowed_collections=["*"],
+        authorized_document_ids=unauth_ids,
+        workspace_id=user.workspace_id,
+    )
+    for c in unauth_ret.get("chunks", []):
+        if c.get("similarity", 0.0) >= 0.65:
+            return True
+    return False
+
+
 @router.post("/search")
 def search_knowledge_base(
     req: SearchRequest,
@@ -3085,6 +3192,24 @@ def search_knowledge_base(
         include_archived=bool(current_user.is_admin and req.include_archived),
     )
     allowed_cols = ["*"] if current_user.is_admin else current_user.allowed_collections
+
+    if not current_user.is_admin and is_unauthorized_user_query(
+        db=db,
+        user=current_user,
+        question=req.query,
+        requested_collection=req.collection,
+        authorized_doc_ids=authorized_doc_ids,
+    ):
+        return {
+            "query": req.query,
+            "mode": req.mode,
+            "collection": req.collection,
+            "embedding_time_ms": 0.0,
+            "retrieval_time_ms": 0.0,
+            "results": [],
+            "citations": [],
+            "message": UNAUTHORIZED_DATA_RESPONSE,
+        }
 
     ret = retriever.retrieve(
         db=db,
@@ -3254,6 +3379,91 @@ async def chat_with_knowledge_base(
             "structured_response": mutated_dict,
         }
 
+    # Strict Check: If non-admin user is not allowed to see the requested data
+    if not current_user.is_admin and is_unauthorized_user_query(
+        db=db,
+        user=current_user,
+        question=question,
+        requested_collection=req.collection,
+        authorized_doc_ids=authorized_doc_ids,
+    ):
+        record_audit_log(
+            db=db,
+            action="RAG_QUERY_UNAUTHORIZED",
+            resource_type="chat",
+            user=current_user,
+            resource_id=session_obj.id,
+            success=False,
+            severity="WARNING",
+            details={
+                "reason": "unauthorized_data_attempt",
+                "question": question[:100],
+            },
+        )
+        structured_resp = build_grounded_structured_response(
+            question=question,
+            answer_text=UNAUTHORIZED_DATA_RESPONSE,
+            answer_found=False,
+            retrieved_chunks=[],
+            citations=[],
+            route=route,
+        )
+        structured_dict = structured_resp.model_dump()
+        obs = {
+            "query": question,
+            "route": route,
+            "embedding_time_ms": 0.0,
+            "retrieval_time_ms": 0.0,
+            "llm_time_ms": 0.0,
+            "retrieved_chunks_count": 0,
+            "similarity_scores": [],
+            "final_context": "",
+            "structured_response": structured_dict,
+        }
+        asst_msg = ChatMessage(
+            session_id=session_obj.id,
+            role="assistant",
+            content=UNAUTHORIZED_DATA_RESPONSE,
+            answer_found=False,
+            citations_json=json.dumps([]),
+            observability_json=json.dumps(obs),
+        )
+        db.add(asst_msg)
+        db.commit()
+
+        if req.stream:
+            async def unauthorized_stream():
+                meta_payload = {
+                    "type": "metadata",
+                    "session_id": session_obj.id,
+                    "citations": [],
+                    "embedding_time_ms": 0.0,
+                    "retrieval_time_ms": 0.0,
+                    "retrieved_chunks": [],
+                }
+                yield f"data: {json.dumps(meta_payload)}\n\n"
+                yield f"data: {json.dumps({'type': 'token', 'token': UNAUTHORIZED_DATA_RESPONSE})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'answer_found': False, 'citations': [], 'observability': obs, 'structured_response': structured_dict})}\n\n"
+
+            headers = {
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+                "Content-Type": "text/event-stream; charset=utf-8",
+            }
+            return StreamingResponse(unauthorized_stream(), media_type="text/event-stream", headers=headers)
+
+        return {
+            "session_id": session_obj.id,
+            "question": question,
+            "answer": UNAUTHORIZED_DATA_RESPONSE,
+            "answer_found": False,
+            "status_flag": "NOT PERMITTED",
+            "citations": [],
+            "observability": obs,
+            "structured_response": structured_dict,
+        }
+
     # Pre-authorized Read-Only Database Query Path
     db_query_result = None
     if route in {"database", "hybrid", "documents"} and authorized_doc_ids:
@@ -3328,20 +3538,35 @@ async def chat_with_knowledge_base(
                 collected_tokens.append(token)
                 yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
             else:
-                async for token in llm_client.stream_answer(
-                    question=question,
-                    assembled_context=ret["assembled_context"],
-                    retrieved_chunks=ret["chunks"],
-                    chat_history=history,
-                ):
+                grounded = llm_client.check_Relevance_and_grounding(question, ret["chunks"])
+                if not ret["chunks"] or not grounded:
+                    is_unauth = not current_user.is_admin and check_unauthorized_content_match(
+                        db=db, user=current_user, question=question, authorized_doc_ids=authorized_doc_ids
+                    )
+                    token = UNAUTHORIZED_DATA_RESPONSE if is_unauth else NOT_FOUND_RESPONSE
                     collected_tokens.append(token)
                     yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+                else:
+                    async for token in llm_client.stream_answer(
+                        question=question,
+                        assembled_context=ret["assembled_context"],
+                        retrieved_chunks=ret["chunks"],
+                        chat_history=history,
+                    ):
+                        collected_tokens.append(token)
+                        yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
 
             llm_time_ms = round((time.perf_counter() - t_llm0) * 1000, 2)
             full_answer = "".join(collected_tokens).strip()
-            ans_found = NOT_FOUND_RESPONSE.lower() not in full_answer.lower()
+            ans_found = (
+                NOT_FOUND_RESPONSE.lower() not in full_answer.lower()
+                and UNAUTHORIZED_DATA_RESPONSE.lower() not in full_answer.lower()
+            )
             if not ans_found and not current_user.is_admin:
-                full_answer = EMPLOYEE_EMPTY_KNOWLEDGE_RESPONSE
+                is_unauth = check_unauthorized_content_match(
+                    db=db, user=current_user, question=question, authorized_doc_ids=authorized_doc_ids
+                )
+                full_answer = UNAUTHORIZED_DATA_RESPONSE if is_unauth else NOT_FOUND_RESPONSE
             final_citations = ret["citations"] if ans_found else []
 
             structured_resp = build_grounded_structured_response(
@@ -3405,18 +3630,36 @@ async def chat_with_knowledge_base(
             "runtime": "deterministic_math",
         }
     else:
-        t_llm0 = time.perf_counter()
-        llm_res = await llm_client.generate_answer(
-            question=question,
-            assembled_context=ret["assembled_context"],
-            retrieved_chunks=ret["chunks"],
-            chat_history=history,
-        )
-        llm_time_ms = round((time.perf_counter() - t_llm0) * 1000, 2)
-        ans_found = llm_res["answer_found"]
-        final_answer_text = llm_res["answer"]
-        if not ans_found and not current_user.is_admin:
-            final_answer_text = EMPLOYEE_EMPTY_KNOWLEDGE_RESPONSE
+        grounded = llm_client.check_Relevance_and_grounding(question, ret["chunks"])
+        if not ret["chunks"] or not grounded:
+            is_unauth = not current_user.is_admin and check_unauthorized_content_match(
+                db=db, user=current_user, question=question, authorized_doc_ids=authorized_doc_ids
+            )
+            ans_found = False
+            final_answer_text = UNAUTHORIZED_DATA_RESPONSE if is_unauth else NOT_FOUND_RESPONSE
+            llm_time_ms = 0.0
+            llm_res = {
+                "answer": final_answer_text,
+                "answer_found": False,
+                "model_used": "Security Policy Enforcement" if is_unauth else "Local Knowledge Verification",
+                "runtime": "security_policy",
+            }
+        else:
+            t_llm0 = time.perf_counter()
+            llm_res = await llm_client.generate_answer(
+                question=question,
+                assembled_context=ret["assembled_context"],
+                retrieved_chunks=ret["chunks"],
+                chat_history=history,
+            )
+            llm_time_ms = round((time.perf_counter() - t_llm0) * 1000, 2)
+            ans_found = llm_res["answer_found"]
+            final_answer_text = llm_res["answer"]
+            if not ans_found and not current_user.is_admin:
+                is_unauth = check_unauthorized_content_match(
+                    db=db, user=current_user, question=question, authorized_doc_ids=authorized_doc_ids
+                )
+                final_answer_text = UNAUTHORIZED_DATA_RESPONSE if is_unauth else NOT_FOUND_RESPONSE
     final_citations = ret["citations"] if ans_found else []
 
     structured_resp = build_grounded_structured_response(
