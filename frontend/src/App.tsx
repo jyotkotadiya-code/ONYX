@@ -50,6 +50,7 @@ import { AdminConsole, AdminSection } from './components/admin/AdminConsole';
 import { EmployeeWorkplaceApp } from './components/employee/EmployeeWorkplaceApp';
 import { AdminWorkplacePortal } from './components/admin/AdminWorkplacePortal';
 import { EmployeeWorkplacePortal } from './components/employee/EmployeeWorkplacePortal';
+import { ImageVectorizerModal } from './components/tools/ImageVectorizerModal';
 
 interface UserInfo {
   id: string;
@@ -200,6 +201,17 @@ export default function App() {
   const [previewDoc, setPreviewDoc] = useState<any | null>(null);
   const [previewHighlightChunkId, setPreviewHighlightChunkId] = useState<string | null>(null);
   const [previewHighlightPage, setPreviewHighlightPage] = useState<number | null>(null);
+
+  // Image Vectorizer Modal State
+  const [vectorizerOpen, setVectorizerOpen] = useState(false);
+  const [vectorizerDocId, setVectorizerDocId] = useState<string | undefined>(undefined);
+  const [vectorizerFilename, setVectorizerFilename] = useState<string | undefined>(undefined);
+
+  const openVectorizer = (docId?: string, filename?: string) => {
+    setVectorizerDocId(docId);
+    setVectorizerFilename(filename);
+    setVectorizerOpen(true);
+  };
 
   // New Collection & New User Forms
   const [newColName, setNewColName] = useState('');
@@ -1866,6 +1878,15 @@ export default function App() {
                             >
                               <Eye className="w-4 h-4" />
                             </button>
+                            {Boolean(doc.modality === 'image' || /\.(png|jpe?g|webp|bmp)$/i.test(doc.filename || '')) && (
+                              <button
+                                onClick={() => openVectorizer(doc.id, doc.filename)}
+                                className="p-1.5 rounded-lg hover:bg-purple-500/20 text-purple-400"
+                                title="Vectorize Image to Scalable SVG"
+                              >
+                                <Sparkles className="w-4 h-4" />
+                              </button>
+                            )}
                             {isAdmin && (
                               <>
                                 <button
@@ -2296,12 +2317,22 @@ export default function App() {
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {previewDoc.document?.modality === 'image' && (
-                <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center">
+                <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 text-center space-y-3">
                   <img
                     src={`/api/documents/${previewDoc.document.id}/file`}
                     alt={previewDoc.document.filename}
                     className="max-h-72 mx-auto rounded-lg"
                   />
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => openVectorizer(previewDoc.document.id, previewDoc.document.filename)}
+                      className="px-3.5 py-1.5 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Vectorize to Scalable SVG</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -2342,6 +2373,15 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ─── Raster-to-Vector SVG Tracing Modal ─── */}
+      <ImageVectorizerModal
+        isOpen={vectorizerOpen}
+        onClose={() => setVectorizerOpen(false)}
+        token={token || undefined}
+        initialDocId={vectorizerDocId}
+        initialFilename={vectorizerFilename}
+      />
     </div>
   );
 }

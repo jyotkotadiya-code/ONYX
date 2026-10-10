@@ -57,7 +57,7 @@ def _route_parser(
         blocks, meta = parse_pdf(file_path, progress_callback=progress_cb)
         modality = "scanned_pdf" if meta.get("is_scanned") else "pdf"
         return blocks, meta, modality
-    if ext in {".docx", ".doc", ".txt", ".md", ".csv", ".json", ".xml"}:
+    if ext in {".docx", ".doc", ".txt", ".md", ".csv", ".json", ".xml", ".xlsx"}:
         blocks, meta = parse_text_or_doc(file_path)
         modality = "docx" if ext == ".docx" else ("doc" if ext == ".doc" else "text")
         return blocks, meta, modality

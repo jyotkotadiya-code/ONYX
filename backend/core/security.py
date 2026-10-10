@@ -12,6 +12,7 @@ ALLOWED_EXTENSIONS = {
     ".txt",
     ".md",
     ".csv",
+    ".xlsx",
     ".json",
     ".xml",
     # Images

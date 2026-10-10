@@ -2,6 +2,7 @@ import copy
 import re
 from typing import Any, Optional
 from backend.response.calculator import calculator
+from backend.response.financial_engine import financial_engine
 from backend.response.renderer_data import extract_structured_data_from_chunks
 from backend.response.schema import AllowedIntentType, ResponsePlan, StructuredResponse
 from backend.response.validator import validate_and_repair_structured_response
@@ -212,6 +213,35 @@ def build_grounded_structured_response(
 
     intent = detect_query_intent(question)
     q_lower = question.lower().strip()
+
+    # Step 0: Deterministic Financial & Revenue Engine Execution
+    fin_res = financial_engine.execute_financial_query(question, retrieved_chunks)
+    if fin_res:
+        fin_answer = fin_res["answer"]
+        fin_components = fin_res.get("components", [])
+        all_comps = [
+            {
+                "id": "text_fin_summary",
+                "type": "text",
+                "title": "Financial Analysis",
+                "data": {"markdown": fin_answer},
+            }
+        ] + fin_components
+        return validate_and_repair_structured_response(
+            raw_payload={
+                "schema_version": "1.0",
+                "version": 1,
+                "title": question[:70].strip().capitalize(),
+                "intent": "calculate",
+                "response_type": "composite" if len(all_comps) > 1 else "text",
+                "components": all_comps,
+                "sources": citations,
+                "confidence": 1.0,
+            },
+            fallback_text=fin_answer,
+            fallback_sources=citations,
+        )
+
     extracted = extract_structured_data_from_chunks(retrieved_chunks, db_query_result=db_query_result)
 
     tables = extracted["tables"]

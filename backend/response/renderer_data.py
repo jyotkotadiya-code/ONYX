@@ -185,7 +185,7 @@ def extract_structured_data_from_chunks(
                         "format": "currency",
                         "currency": "USD" if "$" in content else "INR",
                         "change": None,
-                        "change_label": "GPU Hardware Procurement",
+                        "change_label": f"Source: {filename}",
                         "trend": "up",
                     }
                 )

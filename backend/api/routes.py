@@ -90,16 +90,18 @@ from backend.ingestion.database_parser import inspect_database_schema
 from backend.ingestion.ocr import ocr_engine
 from backend.ingestion.pipeline import process_document_ingestion
 from backend.llm.llm_client import NOT_FOUND_RESPONSE, llm_client
+from backend.response.financial_engine import financial_engine
 from backend.response.planner import (
     apply_workspace_followup_command,
     build_grounded_structured_response,
 )
 from backend.retrieval.retriever import retriever
+from backend.tools.vectorizer import ImageVectorizationError, vector_converter
 
 router = APIRouter(prefix="/api")
 
 EMPLOYEE_EMPTY_KNOWLEDGE_RESPONSE = (
-    "I couldn't find enough information in the knowledge available to your account."
+    "I couldn't find enough reliable information in the uploaded data available to your account to answer that question."
 )
 
 
@@ -2933,10 +2935,137 @@ def reindex_document(
     return {"result": res, "document": _serialize_document(doc, db=db)}
 
 
+# ─── 7b. Raster-to-Vector Tracing Tool Endpoints (PNG/JPG -> SVG) ─────────────
+
+@router.post("/tools/vectorize-image")
+async def vectorize_image_upload(
+    file: UploadFile = File(...),
+    colormode: str = Form("color"),
+    mode: str = Form("spline"),
+    filter_speckle: int = Form(4),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    authorization_service.require_permission(current_user, "document.read")
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format '{ext}'. Raster-to-vector tracing supports PNG, JPG, JPEG, WEBP, and BMP.",
+        )
+
+    upload_dir = settings.resolve_path(settings.UPLOAD_DIR) / "temp_vectorize"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    temp_img_path = upload_dir / f"vec_{uuid.uuid4().hex[:12]}_{sanitize_filename(file.filename or 'image.png')}"
+    try:
+        content = await file.read()
+        temp_img_path.write_bytes(content)
+
+        res = vector_converter.convert_to_svg(
+            input_path=temp_img_path,
+            colormode=colormode,
+            mode=mode,
+            filter_speckle=filter_speckle,
+        )
+
+        record_audit_log(
+            db=db,
+            action="IMAGE_VECTORIZATION",
+            resource_type="tool",
+            user=current_user,
+            resource_id=res["filename"],
+            details={"original_file": file.filename, "paths": res["path_count"]},
+        )
+
+        res["preview_url"] = f"/api/tools/vector-preview/{res['filename']}"
+        res["download_url"] = f"/api/tools/vector-download/{res['filename']}"
+        return res
+    except ImageVectorizationError as ive:
+        raise HTTPException(status_code=400, detail=str(ive))
+    except Exception as e:
+        error_logger.error(f"Image vectorization failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Image vectorization failed: {str(e)}")
+    finally:
+        if temp_img_path.exists():
+            try:
+                temp_img_path.unlink()
+            except Exception:
+                pass
+
+
+@router.get("/tools/vector-preview/{filename}")
+def preview_vector_svg(
+    filename: str,
+    current_user: User = Depends(get_optional_user),
+):
+    safe_name = sanitize_filename(filename)
+    svg_dir = settings.resolve_path(settings.PROCESSED_DIR) / "vector_svgs"
+    svg_path = svg_dir / safe_name
+    if not svg_path.exists():
+        raise HTTPException(status_code=404, detail="Vector SVG file not found.")
+    return FileResponse(
+        path=str(svg_path),
+        media_type="image/svg+xml",
+        filename=safe_name,
+    )
+
+
+@router.get("/tools/vector-download/{filename}")
+def download_vector_svg(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+):
+    safe_name = sanitize_filename(filename)
+    svg_dir = settings.resolve_path(settings.PROCESSED_DIR) / "vector_svgs"
+    svg_path = svg_dir / safe_name
+    if not svg_path.exists():
+        raise HTTPException(status_code=404, detail="Vector SVG file not found.")
+    return FileResponse(
+        path=str(svg_path),
+        media_type="image/svg+xml",
+        filename=safe_name,
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
+
+
+@router.post("/documents/{document_id}/vectorize")
+def vectorize_document_image(
+    document_id: str,
+    colormode: str = Query("color"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    authorization_service.require_permission(current_user, "document.read")
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    decision = authorization_service.evaluate_document_access(db, current_user, doc, action="read")
+    if not decision.allowed:
+        raise HTTPException(status_code=403, detail=decision.reason)
+
+    if doc.modality != "image" and doc.file_type not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
+        raise HTTPException(status_code=400, detail="Only image documents can be converted to vector SVG.")
+
+    img_path = Path(doc.file_path)
+    if not img_path.exists():
+        raise HTTPException(status_code=404, detail="Source image file missing on disk.")
+
+    try:
+        res = vector_converter.convert_to_svg(input_path=img_path, colormode=colormode)
+        res["preview_url"] = f"/api/tools/vector-preview/{res['filename']}"
+        res["download_url"] = f"/api/tools/vector-download/{res['filename']}"
+        return res
+    except ImageVectorizationError as ive:
+        raise HTTPException(status_code=400, detail=str(ive))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Vectorization failed: {e}")
+
+
 # ─── 8. Direct Document Search & RAG Chat Pipeline (Pre-Retrieval Filtered) ───
 
 EMPLOYEE_EMPTY_KNOWLEDGE_RESPONSE = (
-    "I couldn't find enough information in the knowledge available to your account."
+    "I couldn't find enough reliable information in the uploaded data available to your account to answer that question."
 )
 
 
@@ -3193,14 +3322,20 @@ async def chat_with_knowledge_base(
             }
             yield f"data: {json.dumps(meta_payload)}\n\n"
 
-            async for token in llm_client.stream_answer(
-                question=question,
-                assembled_context=ret["assembled_context"],
-                retrieved_chunks=ret["chunks"],
-                chat_history=history,
-            ):
+            fin_calc_res = financial_engine.execute_financial_query(question, ret["chunks"])
+            if fin_calc_res:
+                token = fin_calc_res["answer"]
                 collected_tokens.append(token)
                 yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+            else:
+                async for token in llm_client.stream_answer(
+                    question=question,
+                    assembled_context=ret["assembled_context"],
+                    retrieved_chunks=ret["chunks"],
+                    chat_history=history,
+                ):
+                    collected_tokens.append(token)
+                    yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
 
             llm_time_ms = round((time.perf_counter() - t_llm0) * 1000, 2)
             full_answer = "".join(collected_tokens).strip()
@@ -3252,19 +3387,30 @@ async def chat_with_knowledge_base(
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 
     # Non-streaming response
-    t_llm0 = time.perf_counter()
-    llm_res = await llm_client.generate_answer(
-        question=question,
-        assembled_context=ret["assembled_context"],
-        retrieved_chunks=ret["chunks"],
-        chat_history=history,
-    )
-    llm_time_ms = round((time.perf_counter() - t_llm0) * 1000, 2)
-
-    ans_found = llm_res["answer_found"]
-    final_answer_text = llm_res["answer"]
-    if not ans_found and not current_user.is_admin:
-        final_answer_text = EMPLOYEE_EMPTY_KNOWLEDGE_RESPONSE
+    fin_calc_res = financial_engine.execute_financial_query(question, ret["chunks"])
+    if fin_calc_res:
+        ans_found = True
+        final_answer_text = fin_calc_res["answer"]
+        llm_time_ms = 0.0
+        llm_res = {
+            "answer": final_answer_text,
+            "answer_found": True,
+            "model_used": "Deterministic Financial Engine",
+            "runtime": "deterministic_math",
+        }
+    else:
+        t_llm0 = time.perf_counter()
+        llm_res = await llm_client.generate_answer(
+            question=question,
+            assembled_context=ret["assembled_context"],
+            retrieved_chunks=ret["chunks"],
+            chat_history=history,
+        )
+        llm_time_ms = round((time.perf_counter() - t_llm0) * 1000, 2)
+        ans_found = llm_res["answer_found"]
+        final_answer_text = llm_res["answer"]
+        if not ans_found and not current_user.is_admin:
+            final_answer_text = EMPLOYEE_EMPTY_KNOWLEDGE_RESPONSE
     final_citations = ret["citations"] if ans_found else []
 
     structured_resp = build_grounded_structured_response(

@@ -30,6 +30,7 @@ import {
   FileText,
   ExternalLink,
 } from 'lucide-react';
+import { ImageVectorizerModal } from '../tools/ImageVectorizerModal';
 
 export type AdminSection =
   | 'overview'
@@ -181,6 +182,17 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
   const [createWpSlug, setCreateWpSlug] = useState('');
   const [createWpDesc, setCreateWpDesc] = useState('');
   const [createWpIndustry, setCreateWpIndustry] = useState('Technology');
+
+  // Image Vectorizer Modal State
+  const [vectorizerOpen, setVectorizerOpen] = useState(false);
+  const [vectorizerDocId, setVectorizerDocId] = useState<string | undefined>(undefined);
+  const [vectorizerFilename, setVectorizerFilename] = useState<string | undefined>(undefined);
+
+  const openVectorizer = (docId?: string, filename?: string) => {
+    setVectorizerDocId(docId);
+    setVectorizerFilename(filename);
+    setVectorizerOpen(true);
+  };
 
   const authHeaders = {
     Authorization: `Bearer ${token}`,
@@ -1326,15 +1338,27 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
                 ))}
               </select>
             </div>
-            {onNavigateToUpload && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={onNavigateToUpload}
-                className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-xs flex items-center gap-1.5"
+                type="button"
+                onClick={() => openVectorizer()}
+                className="px-3.5 py-2 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 hover:bg-purple-500/25 font-semibold text-xs flex items-center gap-1.5 transition-colors"
+                title="Convert PNG/JPG raster images into scalable SVG vector geometry"
               >
-                <UploadCloud className="w-3.5 h-3.5" />
-                <span>+ Upload / Ingest Knowledge</span>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Vectorize Image (SVG)</span>
               </button>
-            )}
+              {onNavigateToUpload && (
+                <button
+                  type="button"
+                  onClick={onNavigateToUpload}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold text-xs flex items-center gap-1.5"
+                >
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>+ Upload / Ingest Knowledge</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 overflow-hidden">
@@ -1401,10 +1425,21 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
                       <td className="py-3 px-4 text-right space-x-1">
                         {onOpenDocumentPreview && (
                           <button
+                            type="button"
                             onClick={() => onOpenDocumentPreview(d.id)}
                             className="px-2 py-1 rounded-lg border border-zinc-300 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-[11px]"
                           >
                             Preview
+                          </button>
+                        )}
+                        {Boolean(d.modality === 'image' || /\.(png|jpe?g|webp|bmp)$/i.test(d.filename || '')) && (
+                          <button
+                            type="button"
+                            onClick={() => openVectorizer(d.id, d.filename)}
+                            className="px-2 py-1 rounded-lg bg-purple-500/15 text-purple-400 border border-purple-500/30 hover:bg-purple-500/25 font-medium text-[11px] transition-colors"
+                            title="Trace raster image to SVG vector"
+                          >
+                            Vectorize
                           </button>
                         )}
                         <button
@@ -2445,6 +2480,15 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
           </form>
         </div>
       )}
+
+      {/* Raster to Vector SVG Modal */}
+      <ImageVectorizerModal
+        isOpen={vectorizerOpen}
+        onClose={() => setVectorizerOpen(false)}
+        token={token}
+        initialDocId={vectorizerDocId}
+        initialFilename={vectorizerFilename}
+      />
     </div>
   );
 };

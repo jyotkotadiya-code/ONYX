@@ -116,8 +116,72 @@ def _parse_legacy_doc_file(file_path: Path) -> tuple[list[ParsedBlock], dict[str
     return blocks, {"page_count": 1, "title": file_path.stem}
 
 
+def _parse_excel_file(file_path: Path) -> tuple[list[ParsedBlock], dict[str, Any]]:
+    """
+    Parse Excel (.xlsx) spreadsheets, serializing sheets into structured markdown tables.
+    Preserves exact column headers, numerical values, and sheet names.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(str(file_path), data_only=True, read_only=True)
+    blocks: list[ParsedBlock] = []
+    sheet_names = wb.sheetnames
+    table_count = 0
+
+    for sheet_idx, sheet_name in enumerate(sheet_names, start=1):
+        ws = wb[sheet_name]
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            continue
+
+        # Filter out empty rows
+        non_empty_rows = [
+            [str(c).strip() if c is not None else "" for c in r]
+            for r in rows
+            if any(c is not None and str(c).strip() != "" for c in r)
+        ]
+        if not non_empty_rows:
+            continue
+
+        headers = non_empty_rows[0]
+        # Pad or clean headers
+        clean_headers = [h if h else f"Col_{i+1}" for i, h in enumerate(headers)]
+        md_lines = [
+            f"### Sheet: {sheet_name}",
+            "| " + " | ".join(clean_headers) + " |",
+            "| " + " | ".join(["---"] * len(clean_headers)) + " |",
+        ]
+        for row in non_empty_rows[1:]:
+            padded = row + [""] * max(0, len(clean_headers) - len(row))
+            md_lines.append("| " + " | ".join(padded[: len(clean_headers)]) + " |")
+
+        table_count += 1
+        blocks.append(
+            ParsedBlock(
+                text="\n".join(md_lines),
+                modality="text",
+                page_number=sheet_idx,
+                section_title=f"Sheet: {sheet_name}",
+                table_name=sheet_name,
+            )
+        )
+
+    wb.close()
+    meta = {
+        "sheets": sheet_names,
+        "tables_extracted": table_count,
+        "page_count": max(1, len(blocks)),
+        "title": file_path.stem,
+    }
+    return blocks, meta
+
+
 def parse_text_or_doc(file_path: Path) -> tuple[list[ParsedBlock], dict[str, Any]]:
     ext = file_path.suffix.lower()
+    if ext == ".xlsx":
+        blocks, meta = _parse_excel_file(file_path)
+        ingestion_logger.info(f"Parsed Excel spreadsheet '{file_path.name}' with {len(blocks)} sheet tables.")
+        return blocks, meta
     if ext == ".docx":
         blocks, meta = _parse_docx_file(file_path)
         ingestion_logger.info(f"Parsed DOCX '{file_path.name}' into {len(blocks)} structural blocks.")
@@ -127,7 +191,7 @@ def parse_text_or_doc(file_path: Path) -> tuple[list[ParsedBlock], dict[str, Any
         ingestion_logger.info(f"Parsed legacy DOC '{file_path.name}'.")
         return blocks, meta
 
-    # Plain text (.txt, .md, .csv, .json)
+    # Plain text (.txt, .md, .csv, .json, .xml)
     text = file_path.read_text(encoding="utf-8", errors="replace").strip()
     blocks = [
         ParsedBlock(
